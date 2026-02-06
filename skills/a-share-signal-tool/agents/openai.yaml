@@ -1,0 +1,4 @@
+interface:
+  display_name: "A股分钟信号工具"
+  short_description: "文档优先：模块需求与进度规范"
+  default_prompt: "Use $a-share-signal-tool to enforce doc-first development and update module requirements/progress docs before changing code."
