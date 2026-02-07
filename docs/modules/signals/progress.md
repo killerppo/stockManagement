@@ -1,14 +1,16 @@
 # signals 模块｜进度
 
 ## Done
-- （暂无）
+- 明确初版信号字段与入场/止损/止盈规则（见 `docs/modules/signals/requirements.md`）
+- 实现第一套策略模板：短线突破 5m（`stock_management/signals/strategies/breakout_5m.py`）
+- 增加最小脚本：`scripts/signals_breakout_5m.py`
 
 ## Doing
 - （暂无）
 
 ## Next
-- 固化信号输出字段与默认计算规则（entry/stop/tp），并补齐至少 3 套策略模板的需求描述。
+- 补齐更多模板（趋势回调/风控止盈止损等）
+- 增加冷却/去抖状态机（后置）
 
 ## Blockers
 - 依赖 indicators 模块的指标清单与参数规范。
-

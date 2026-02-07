@@ -13,7 +13,7 @@ from .quality import find_gaps
 
 @dataclass(frozen=True, slots=True)
 class DataService:
-    provider: DataProvider
+    provider: DataProvider | None
     store: SQLiteBarStore
 
     @classmethod
@@ -21,6 +21,8 @@ class DataService:
         return cls(provider=provider, store=SQLiteBarStore(path=data_dir / "bars.sqlite"))
 
     def refresh_1m(self, symbol: str, start: datetime, end: datetime) -> int:
+        if self.provider is None:
+            raise RuntimeError("provider is not configured")
         bars = self.provider.fetch_1m_bars(symbol=symbol, start=start, end=end)
         return self.store.upsert_1m(symbol=symbol, bars=bars)
 
