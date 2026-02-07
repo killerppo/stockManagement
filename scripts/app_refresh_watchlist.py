@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from stock_management.data.calendar import TZ_SHANGHAI, is_session_minute  # noqa: E402
 from stock_management.data.providers import EastmoneyKlineProvider, TushareProProvider  # noqa: E402
 from stock_management.data.service import DataService  # noqa: E402
-from stock_management.signals import breakout_entry_5m  # noqa: E402
+from stock_management.signals import breakout_entry_5m, breakout_scan_5m  # noqa: E402
 from stock_management.indicators import IndicatorParams  # noqa: E402
 from stock_management.signals.params import BreakoutParams  # noqa: E402
 from stock_management.storage import SQLiteSignalStore  # noqa: E402
@@ -48,6 +48,7 @@ def _run_once(
     sleep_sec: float,
     run_signals: bool,
     signal_window_minutes: int,
+    signals_scan: bool,
     signal_store: SQLiteSignalStore | None,
 ) -> int:
     total_changes = 0
@@ -64,10 +65,16 @@ def _run_once(
             if run_signals:
                 sig_start = end - timedelta(minutes=max(signal_window_minutes, 1))
                 bars_5m = service.get_bars(symbol, "5m", sig_start, end)
-                sig = breakout_entry_5m(symbol=symbol, bars_5m=bars_5m)
-                if sig is not None:
-                    signals.append(sig)
-                    signals_to_store.append(sig)
+                if signals_scan:
+                    sigs = breakout_scan_5m(symbol=symbol, bars_5m=bars_5m)
+                    for sig in sigs:
+                        signals.append(sig)
+                        signals_to_store.append(sig)
+                else:
+                    sig = breakout_entry_5m(symbol=symbol, bars_5m=bars_5m)
+                    if sig is not None:
+                        signals.append(sig)
+                        signals_to_store.append(sig)
         except Exception as e:  # noqa: BLE001
             failed.append((symbol, str(e)))
             print(f"[{idx}/{len(symbols)}] {symbol} ERROR {e}")
@@ -111,6 +118,7 @@ def main() -> int:
     parser.add_argument("--sleep", type=float, default=0.0, help="Extra sleep seconds between symbols.")
 
     parser.add_argument("--signals", action="store_true", help="Run signals after refresh (breakout 5m).")
+    parser.add_argument("--signals-scan", action="store_true", help="Scan all 5m bars in window for triggers.")
     parser.add_argument(
         "--signal-window-minutes",
         type=int,
@@ -179,6 +187,7 @@ def main() -> int:
                 sleep_sec=args.sleep,
                 run_signals=args.signals,
                 signal_window_minutes=args.signal_window_minutes,
+                signals_scan=args.signals_scan,
                 signal_store=signal_store,
             )
             if rc != 0 and not args.loop:

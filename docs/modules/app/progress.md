@@ -5,6 +5,7 @@
 - 实现最小 CLI：`scripts/app_refresh_watchlist.py`
 - 打通信号联动：支持 `--signals` 输出（短线突破 5m）
 - 支持信号落库：`--log-signals` 写入 `data/signals.sqlite`
+- 支持信号区间扫描：`--signals-scan` 输出窗口内触发点
 
 ## Doing
 - （暂无）
