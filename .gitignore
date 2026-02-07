@@ -21,7 +21,10 @@ node_modules/
 .env
 
 # Data / caches (if created later)
-data/
-cache/
-tmp/
-
+/data/
+/cache/
+/tmp/
+/data_test/
+/scripts/data/
+*.sqlite
+*.db
