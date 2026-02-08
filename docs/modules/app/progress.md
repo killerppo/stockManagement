@@ -24,6 +24,7 @@
 - GUI 增强：增加 Provider 选择（akshare/eastmoney），默认 akshare
 - GUI 增强：Signals 列表支持分页（上一页/下一页 + 每页条数）
 - GUI 美化：采用 Tab（Watchlist/Signals/Log）与滚动条，减少页面拥挤并确保日志可见
+- K线增强：加入鲁棒缩放（分位数）与异常值裁剪，避免单根异常数据导致“特别长的K线”拉伸全图
 
 ## Doing
 - （暂无）

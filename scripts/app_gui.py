@@ -5,6 +5,7 @@ import time
 import traceback
 from dataclasses import asdict
 from datetime import datetime, timedelta
+from math import isfinite
 from pathlib import Path
 from queue import Queue
 from zoneinfo import ZoneInfo
@@ -1180,6 +1181,7 @@ class KlineWindow(tk.Toplevel):
 
         self.var_freq = tk.StringVar(value="5m")
         self.var_bars = tk.StringVar(value="120")
+        self.var_scale = tk.StringVar(value="robust")
 
         top = ttk.Frame(self)
         top.pack(fill="x", padx=10, pady=8)
@@ -1195,7 +1197,12 @@ class KlineWindow(tk.Toplevel):
         ttk.Label(top, text="Bars").grid(row=0, column=4, sticky="w")
         ttk.Entry(top, textvariable=self.var_bars, width=8).grid(row=0, column=5, sticky="w", padx=6)
 
-        ttk.Button(top, text="Refresh", command=self.refresh).grid(row=0, column=6, sticky="w", padx=(12, 0))
+        ttk.Label(top, text="Scale").grid(row=0, column=6, sticky="w", padx=(12, 0))
+        scale_combo = ttk.Combobox(top, textvariable=self.var_scale, values=["robust", "full"], width=8, state="readonly")
+        scale_combo.grid(row=0, column=7, sticky="w", padx=6)
+        scale_combo.bind("<<ComboboxSelected>>", lambda _e: self.refresh())
+
+        ttk.Button(top, text="Refresh", command=self.refresh).grid(row=0, column=8, sticky="w", padx=(12, 0))
 
         self.canvas = tk.Canvas(self, bg="white")
         self.canvas.pack(fill="both", expand=True, padx=10, pady=(0, 10))
@@ -1217,6 +1224,7 @@ class KlineWindow(tk.Toplevel):
         try:
             freq = self.var_freq.get()
             bars_n = max(20, int(self.var_bars.get() or "120"))
+            scale = (self.var_scale.get() or "robust").strip().lower()
         except Exception as e:
             self.parent._notify_error("Kline", str(e))
             return
@@ -1236,9 +1244,42 @@ class KlineWindow(tk.Toplevel):
 
         if not use_full:
             bars = bars[-bars_n:]
-        self._draw_candles(bars, title=f"{self.symbol} {freq} {bars[0].ts:%Y-%m-%d %H:%M} .. {bars[-1].ts:%H:%M}")
+        self._draw_candles(
+            bars,
+            title=f"{self.symbol} {freq} {bars[0].ts:%Y-%m-%d %H:%M} .. {bars[-1].ts:%H:%M}",
+            scale=scale,
+        )
 
-    def _draw_candles(self, bars: list, *, title: str) -> None:
+    def _quantile(self, xs_sorted: list[float], q: float) -> float:
+        if not xs_sorted:
+            return 0.0
+        q = max(0.0, min(1.0, float(q)))
+        if len(xs_sorted) == 1:
+            return float(xs_sorted[0])
+        pos = q * (len(xs_sorted) - 1)
+        lo_i = int(pos)
+        hi_i = min(len(xs_sorted) - 1, lo_i + 1)
+        frac = pos - lo_i
+        return float(xs_sorted[lo_i] * (1 - frac) + xs_sorted[hi_i] * frac)
+
+    def _valid_bar(self, b) -> bool:
+        try:
+            o, h, l, c = float(b.open), float(b.high), float(b.low), float(b.close)
+        except Exception:
+            return False
+        if not (isfinite(o) and isfinite(h) and isfinite(l) and isfinite(c)):
+            return False
+        if min(o, h, l, c) <= 0:
+            return False
+        if h < l:
+            return False
+        if h < max(o, c):
+            return False
+        if l > min(o, c):
+            return False
+        return True
+
+    def _draw_candles(self, bars: list, *, title: str, scale: str) -> None:
         self.canvas.delete("all")
         w = max(1, int(self.canvas.winfo_width()))
         h = max(1, int(self.canvas.winfo_height()))
@@ -1247,10 +1288,30 @@ class KlineWindow(tk.Toplevel):
         plot_w = max(10, w - pad_left - pad_right)
         plot_h = max(10, h - pad_top - pad_bottom)
 
-        highs = [b.high for b in bars]
-        lows = [b.low for b in bars]
-        hi = max(highs)
-        lo = min(lows)
+        bars_ok = [b for b in bars if self._valid_bar(b)]
+        invalid_n = len(bars) - len(bars_ok)
+        if not bars_ok:
+            bars_ok = bars
+            invalid_n = 0
+
+        highs = [float(b.high) for b in bars_ok]
+        lows = [float(b.low) for b in bars_ok]
+        full_hi = max(highs)
+        full_lo = min(lows)
+
+        scale = (scale or "robust").strip().lower()
+        if scale == "robust" and len(bars_ok) >= 80:
+            prices: list[float] = []
+            for b in bars_ok:
+                prices.extend([float(b.open), float(b.high), float(b.low), float(b.close)])
+            prices = [p for p in prices if isfinite(p) and p > 0]
+            prices.sort()
+            lo = self._quantile(prices, 0.01)
+            hi = self._quantile(prices, 0.99)
+            if hi <= lo:
+                lo, hi = full_lo, full_hi
+        else:
+            lo, hi = full_lo, full_hi
         if hi == lo:
             hi = lo + 1e-6
 
@@ -1258,7 +1319,14 @@ class KlineWindow(tk.Toplevel):
             return pad_top + (hi - price) / (hi - lo) * plot_h
 
         # title
-        self.canvas.create_text(pad_left, 10, anchor="nw", text=title, fill="black")
+        info = []
+        if scale == "robust":
+            info.append("scale=robust(1-99%)")
+        else:
+            info.append("scale=full")
+        if invalid_n:
+            info.append(f"invalid={invalid_n}")
+        self.canvas.create_text(pad_left, 10, anchor="nw", text=title + "  " + " ".join(info), fill="black")
 
         # axes
         self.canvas.create_line(pad_left, pad_top, pad_left, pad_top + plot_h, fill="#999")
@@ -1271,18 +1339,33 @@ class KlineWindow(tk.Toplevel):
             self.canvas.create_line(pad_left - 4, yy, pad_left, yy, fill="#999")
             self.canvas.create_text(pad_left - 8, yy, anchor="e", text=f"{p:.2f}", fill="#444")
 
-        n = len(bars)
+        n = len(bars_ok)
         candle_w = max(2, int(plot_w / max(n, 1) * 0.6))
         step = plot_w / max(n, 1)
 
-        for i, b in enumerate(bars):
+        clipped = 0
+        for i, b in enumerate(bars_ok):
             cx = pad_left + (i + 0.5) * step
-            color = "#e74c3c" if b.close >= b.open else "#2ecc71"
+            color = "#e74c3c" if float(b.close) >= float(b.open) else "#2ecc71"
+            o = float(b.open)
+            c = float(b.close)
+            hi_b = float(b.high)
+            lo_b = float(b.low)
+            # Clip for rendering when using robust scale to avoid outliers stretching the whole chart.
+            if scale == "robust":
+                if lo_b < lo or hi_b > hi or o < lo or o > hi or c < lo or c > hi:
+                    clipped += 1
+                lo_r = max(lo, min(hi, lo_b))
+                hi_r = max(lo, min(hi, hi_b))
+                o_r = max(lo, min(hi, o))
+                c_r = max(lo, min(hi, c))
+            else:
+                lo_r, hi_r, o_r, c_r = lo_b, hi_b, o, c
             # wick
-            self.canvas.create_line(cx, y(b.low), cx, y(b.high), fill=color)
+            self.canvas.create_line(cx, y(lo_r), cx, y(hi_r), fill=color)
             # body
-            y1 = y(b.open)
-            y2 = y(b.close)
+            y1 = y(o_r)
+            y2 = y(c_r)
             top = min(y1, y2)
             bottom = max(y1, y2)
             if bottom - top < 1:
@@ -1292,6 +1375,11 @@ class KlineWindow(tk.Toplevel):
             # time labels every ~10 candles
             if i == 0 or i == n - 1 or (n > 20 and i % max(1, n // 10) == 0):
                 self.canvas.create_text(cx, pad_top + plot_h + 12, anchor="n", text=b.ts.strftime("%H:%M"), fill="#444")
+
+        if scale == "robust" and clipped:
+            self.parent._log(f"kline clipped outliers={clipped} lo={lo:.4f} hi={hi:.4f} full_lo={full_lo:.4f} full_hi={full_hi:.4f}")
+        if invalid_n:
+            self.parent._log(f"kline dropped invalid bars={invalid_n}")
 
 
 class BacktestWindow(tk.Toplevel):
