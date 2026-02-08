@@ -83,7 +83,9 @@ class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("stockManagement")
-        self.geometry("1100x700")
+        self.geometry("1200x780")
+        self.minsize(1000, 650)
+        self._init_style()
 
         self._log_queue: Queue[str] = Queue()
         self._worker: threading.Thread | None = None
@@ -116,18 +118,36 @@ class App(tk.Tk):
         self._reload_signals()
 
     # ---------- UI ----------
-    def _build_ui(self) -> None:
-        top = ttk.Frame(self)
-        top.pack(fill="x", padx=10, pady=8)
+    def _init_style(self) -> None:
+        style = ttk.Style(self)
+        themes = set(style.theme_names())
+        for name in ("vista", "clam", "default"):
+            if name in themes:
+                try:
+                    style.theme_use(name)
+                except Exception:
+                    pass
+                break
 
-        ttk.Label(top, text="Provider").grid(row=0, column=0, sticky="w")
-        ttk.Combobox(
-            top,
-            textvariable=self.var_provider,
-            values=["akshare", "eastmoney"],
-            width=10,
-            state="readonly",
-        ).grid(row=0, column=1, sticky="w", padx=6)
+        style.configure("TButton", padding=(10, 6))
+        style.configure("Treeview", rowheight=24)
+        style.configure("Treeview.Heading", padding=(6, 6))
+        try:
+            style.map(
+                "Treeview",
+                background=[("selected", "#cce8ff")],
+                foreground=[("selected", "black")],
+            )
+        except Exception:
+            pass
+
+    def _build_ui(self) -> None:
+        root = ttk.Frame(self, padding=(12, 10))
+        root.pack(fill="both", expand=True)
+
+        # ---- Controls (compact) ----
+        ctrl = ttk.Frame(root)
+        ctrl.pack(fill="x")
 
         self.var_group = tk.StringVar(value="")
         self.var_limit = tk.StringVar(value="0")
@@ -142,112 +162,151 @@ class App(tk.Tk):
         self.var_use_fixed = tk.BooleanVar(value=False)
         self.var_log_signals = tk.BooleanVar(value=True)
 
-        ttk.Label(top, text="Group").grid(row=0, column=2, sticky="w")
-        ttk.Entry(top, textvariable=self.var_group, width=12).grid(row=0, column=3, padx=6)
+        ttk.Label(ctrl, text="Provider").grid(row=0, column=0, sticky="w")
+        ttk.Combobox(
+            ctrl,
+            textvariable=self.var_provider,
+            values=["akshare", "eastmoney"],
+            width=10,
+            state="readonly",
+        ).grid(row=0, column=1, sticky="w", padx=(6, 14))
 
-        ttk.Label(top, text="Limit").grid(row=0, column=4, sticky="w")
-        ttk.Entry(top, textvariable=self.var_limit, width=6).grid(row=0, column=5, padx=6)
+        ttk.Label(ctrl, text="Group").grid(row=0, column=2, sticky="w")
+        ttk.Entry(ctrl, textvariable=self.var_group, width=12).grid(row=0, column=3, sticky="w", padx=(6, 14))
 
-        ttk.Label(top, text="Window(min)").grid(row=0, column=6, sticky="w")
-        ttk.Entry(top, textvariable=self.var_window, width=8).grid(row=0, column=7, padx=6)
+        ttk.Label(ctrl, text="Limit").grid(row=0, column=4, sticky="w")
+        ttk.Entry(ctrl, textvariable=self.var_limit, width=6).grid(row=0, column=5, sticky="w", padx=(6, 14))
 
-        ttk.Label(top, text="SignalWindow(min)").grid(row=0, column=8, sticky="w")
-        ttk.Entry(top, textvariable=self.var_signal_window, width=10).grid(row=0, column=9, padx=6)
+        ttk.Label(ctrl, text="Window(min)").grid(row=0, column=6, sticky="w")
+        ttk.Entry(ctrl, textvariable=self.var_window, width=8).grid(row=0, column=7, sticky="w", padx=(6, 14))
 
-        ttk.Label(top, text="Interval(s)").grid(row=0, column=10, sticky="w")
-        ttk.Entry(top, textvariable=self.var_interval, width=8).grid(row=0, column=11, padx=6)
+        ttk.Label(ctrl, text="SignalWindow(min)").grid(row=0, column=8, sticky="w")
+        ttk.Entry(ctrl, textvariable=self.var_signal_window, width=10).grid(row=0, column=9, sticky="w", padx=(6, 14))
 
-        ttk.Label(top, text="Lookback").grid(row=1, column=10, sticky="w", pady=(6, 0))
-        ttk.Entry(top, textvariable=self.var_lookback, width=8).grid(row=1, column=11, padx=6, pady=(6, 0))
+        self._adv_open = False
+        self._adv_btn = ttk.Button(ctrl, text="Advanced ▾", command=self._toggle_advanced)
+        self._adv_btn.grid(row=0, column=10, sticky="e")
+        ctrl.columnconfigure(10, weight=1)
 
-        ttk.Label(top, text="VolFactor").grid(row=2, column=10, sticky="w", pady=(6, 0))
-        ttk.Entry(top, textvariable=self.var_vol_factor, width=8).grid(row=2, column=11, padx=6, pady=(6, 0))
+        ttk.Separator(root).pack(fill="x", pady=(10, 8))
 
-        ttk.Label(top, text="Start").grid(row=1, column=2, sticky="w", pady=(6, 0))
-        self.start_entry = ttk.Entry(top, textvariable=self.var_start, width=28, state="disabled")
-        self.start_entry.grid(row=1, column=3, columnspan=2, sticky="we", padx=6, pady=(6, 0))
-        ttk.Button(top, text="Pick", command=lambda: self._pick_datetime(self.var_start, title="Pick Start")).grid(row=1, column=5, sticky="w", pady=(6, 0))
+        # ---- Time range ----
+        timebar = ttk.Frame(root)
+        timebar.pack(fill="x")
 
-        ttk.Label(top, text="End").grid(row=1, column=6, sticky="w", pady=(6, 0))
-        self.end_entry = ttk.Entry(top, textvariable=self.var_end, width=28, state="disabled")
-        self.end_entry.grid(row=1, column=7, columnspan=2, sticky="we", padx=6, pady=(6, 0))
-        ttk.Button(top, text="Pick", command=lambda: self._pick_datetime(self.var_end, title="Pick End")).grid(row=1, column=9, sticky="w", pady=(6, 0))
+        ttk.Checkbutton(timebar, text="Use Start/End", variable=self.var_use_fixed, command=self._on_toggle_fixed).grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(timebar, text="Start").grid(row=0, column=1, sticky="w", padx=(14, 0))
+        self.start_entry = ttk.Entry(timebar, textvariable=self.var_start, width=28, state="disabled")
+        self.start_entry.grid(row=0, column=2, sticky="we", padx=(6, 6))
+        ttk.Button(timebar, text="Pick", command=lambda: self._pick_datetime(self.var_start, title="Pick Start")).grid(
+            row=0, column=3, sticky="w"
+        )
 
-        btns = ttk.Frame(top)
-        btns.grid(row=0, column=12, rowspan=2, padx=(12, 0), sticky="ns")
+        ttk.Label(timebar, text="End").grid(row=0, column=4, sticky="w", padx=(14, 0))
+        self.end_entry = ttk.Entry(timebar, textvariable=self.var_end, width=28, state="disabled")
+        self.end_entry.grid(row=0, column=5, sticky="we", padx=(6, 6))
+        ttk.Button(timebar, text="Pick", command=lambda: self._pick_datetime(self.var_end, title="Pick End")).grid(
+            row=0, column=6, sticky="w"
+        )
+        ttk.Button(timebar, text="Today 09:30-15:00", command=self._fill_today_session).grid(
+            row=0, column=7, sticky="e", padx=(14, 0)
+        )
+        timebar.columnconfigure(2, weight=1)
+        timebar.columnconfigure(5, weight=1)
 
-        ttk.Button(btns, text="Reload Watchlist", command=self._load_watchlist).pack(fill="x", pady=2)
-        ttk.Button(btns, text="Add Symbol", command=self._on_add_symbol).pack(fill="x", pady=2)
-        ttk.Button(btns, text="Edit Selected", command=self._on_edit_symbol).pack(fill="x", pady=2)
-        ttk.Button(btns, text="Delete Selected", command=self._on_delete_symbol).pack(fill="x", pady=2)
-        ttk.Button(btns, text="Save Watchlist", command=self._on_save_watchlist).pack(fill="x", pady=2)
-        ttk.Button(btns, text="Refresh Cache", command=self._on_refresh).pack(fill="x", pady=2)
-        ttk.Button(btns, text="Scan Signals", command=self._on_scan).pack(fill="x", pady=2)
-        ttk.Button(btns, text="Refresh+Scan", command=self._on_refresh_scan).pack(fill="x", pady=2)
-        ttk.Button(btns, text="Reload Signals", command=self._reload_signals).pack(fill="x", pady=2)
-        ttk.Button(btns, text="Show Kline", command=self._on_show_kline).pack(fill="x", pady=2)
-        ttk.Button(btns, text="Backtest", command=self._on_open_backtest).pack(fill="x", pady=2)
-        ttk.Button(btns, text="Start Loop", command=self._on_start_loop).pack(fill="x", pady=2)
-        ttk.Button(btns, text="Stop", command=self._on_stop).pack(fill="x", pady=2)
+        # ---- Advanced (collapsible) ----
+        self._adv_frame = ttk.LabelFrame(root, text="Advanced")
+        # initially hidden
 
+        ttk.Label(self._adv_frame, text="Interval(s)").grid(row=0, column=0, sticky="w", padx=(10, 0), pady=8)
+        ttk.Entry(self._adv_frame, textvariable=self.var_interval, width=10).grid(row=0, column=1, sticky="w", padx=6, pady=8)
         ttk.Checkbutton(
-            top, text="Log signals to SQLite", variable=self.var_log_signals, command=self._on_toggle_log_signals
-        ).grid(row=2, column=2, columnspan=3, sticky="w", pady=(6, 0))
-        ttk.Checkbutton(top, text="Auto scan in loop", variable=self.var_auto_scan, command=self._on_toggle_auto_scan).grid(
-            row=2, column=5, columnspan=3, sticky="w", pady=(6, 0)
+            self._adv_frame, text="Auto scan in loop", variable=self.var_auto_scan, command=self._on_toggle_auto_scan
+        ).grid(row=0, column=2, sticky="w", padx=(14, 0), pady=8)
+        ttk.Checkbutton(
+            self._adv_frame, text="Log signals to SQLite", variable=self.var_log_signals, command=self._on_toggle_log_signals
+        ).grid(row=0, column=3, sticky="w", padx=(14, 0), pady=8)
+
+        ttk.Label(self._adv_frame, text="Lookback").grid(row=1, column=0, sticky="w", padx=(10, 0), pady=(0, 10))
+        ttk.Entry(self._adv_frame, textvariable=self.var_lookback, width=10).grid(row=1, column=1, sticky="w", padx=6, pady=(0, 10))
+        ttk.Label(self._adv_frame, text="VolFactor").grid(row=1, column=2, sticky="w", padx=(14, 0), pady=(0, 10))
+        ttk.Entry(self._adv_frame, textvariable=self.var_vol_factor, width=10).grid(row=1, column=3, sticky="w", padx=6, pady=(0, 10))
+
+        ttk.Button(self._adv_frame, text="Start Loop", command=self._on_start_loop).grid(
+            row=0, column=4, rowspan=2, sticky="ns", padx=(18, 6), pady=8
         )
-        ttk.Checkbutton(top, text="Use Start/End", variable=self.var_use_fixed, command=self._on_toggle_fixed).grid(
-            row=2, column=8, columnspan=2, sticky="w", pady=(6, 0)
-        )
-        ttk.Button(top, text="Today 09:30-15:00", command=self._fill_today_session).grid(
-            row=2, column=10, columnspan=2, sticky="w", pady=(6, 0)
+        ttk.Button(self._adv_frame, text="Stop", command=self._on_stop).grid(
+            row=0, column=5, rowspan=2, sticky="ns", padx=(0, 10), pady=8
         )
 
-        main = ttk.PanedWindow(self, orient="vertical")
-        main.pack(fill="both", expand=True, padx=10, pady=8)
+        # ---- Tabs ----
+        notebook = ttk.Notebook(root)
+        self._notebook = notebook
+        notebook.pack(fill="both", expand=True, pady=(10, 0))
 
-        mid = ttk.PanedWindow(main, orient="horizontal")
-        main.add(mid, weight=4)
+        tab_watch = ttk.Frame(notebook, padding=(8, 8))
+        tab_signals = ttk.Frame(notebook, padding=(8, 8))
+        tab_log = ttk.Frame(notebook, padding=(8, 8))
+        notebook.add(tab_watch, text="Watchlist")
+        notebook.add(tab_signals, text="Signals")
+        notebook.add(tab_log, text="Log")
 
-        left = ttk.Frame(mid)
-        right = ttk.Frame(mid)
-        mid.add(left, weight=3)
-        mid.add(right, weight=2)
+        # Watchlist tab
+        w_hdr = ttk.Frame(tab_watch)
+        w_hdr.pack(fill="x")
+        ttk.Button(w_hdr, text="Reload", command=self._load_watchlist).pack(side="left")
+        ttk.Button(w_hdr, text="Add", command=self._on_add_symbol).pack(side="left", padx=(6, 0))
+        ttk.Button(w_hdr, text="Edit", command=self._on_edit_symbol).pack(side="left", padx=(6, 0))
+        ttk.Button(w_hdr, text="Delete", command=self._on_delete_symbol).pack(side="left", padx=(6, 0))
+        ttk.Button(w_hdr, text="Save", command=self._on_save_watchlist).pack(side="left", padx=(6, 0))
+        ttk.Separator(w_hdr, orient="vertical").pack(side="left", fill="y", padx=10, pady=2)
+        ttk.Button(w_hdr, text="Refresh Cache", command=self._on_refresh).pack(side="left")
+        ttk.Button(w_hdr, text="Show Kline", command=self._on_show_kline).pack(side="left", padx=(6, 0))
+        ttk.Button(w_hdr, text="Backtest", command=self._on_open_backtest).pack(side="left", padx=(6, 0))
 
-        ttk.Label(left, text="Watchlist").pack(anchor="w")
+        w_body = ttk.Frame(tab_watch)
+        w_body.pack(fill="both", expand=True, pady=(10, 0))
         self.watch_tree = ttk.Treeview(
-            left,
+            w_body,
             columns=("symbol", "group", "enabled", "note", "last_ts", "last_close", "changes"),
             show="headings",
-            height=18,
+            selectmode="browse",
         )
         for col, w in [
             ("symbol", 95),
             ("group", 85),
-            ("enabled", 65),
-            ("note", 180),
+            ("enabled", 70),
+            ("note", 220),
             ("last_ts", 160),
-            ("last_close", 85),
-            ("changes", 70),
+            ("last_close", 95),
+            ("changes", 80),
         ]:
             self.watch_tree.heading(col, text=col)
-            self.watch_tree.column(col, width=w, anchor="w")
-        self.watch_tree.pack(fill="both", expand=True)
+            self.watch_tree.column(col, width=w, anchor="w", stretch=(col in ("note", "last_ts")))
+        self.watch_tree.tag_configure("odd", background="#f7f7f7")
         self.watch_tree.bind("<Double-1>", lambda _e: self._on_show_kline())
+        w_scroll = ttk.Scrollbar(w_body, orient="vertical", command=self.watch_tree.yview)
+        self.watch_tree.configure(yscrollcommand=w_scroll.set)
+        self.watch_tree.pack(side="left", fill="both", expand=True)
+        w_scroll.pack(side="right", fill="y")
 
-        sig_hdr = ttk.Frame(right)
-        sig_hdr.pack(fill="x")
-        ttk.Label(sig_hdr, text="Signals").pack(side="left")
+        # Signals tab
+        s_hdr = ttk.Frame(tab_signals)
+        s_hdr.pack(fill="x")
+        ttk.Button(s_hdr, text="Scan Signals", command=self._on_scan).pack(side="left")
+        ttk.Button(s_hdr, text="Refresh+Scan", command=self._on_refresh_scan).pack(side="left", padx=(6, 0))
+        ttk.Button(s_hdr, text="Reload", command=lambda: self._reload_signals()).pack(side="left", padx=(6, 0))
 
-        ttk.Label(sig_hdr, textvariable=self._sig_page_var).pack(side="right", padx=(0, 8))
-        self._sig_next_btn = ttk.Button(sig_hdr, text="Next", command=self._on_signals_next)
+        ttk.Label(s_hdr, textvariable=self._sig_page_var).pack(side="right", padx=(0, 8))
+        self._sig_next_btn = ttk.Button(s_hdr, text="Next", command=self._on_signals_next)
         self._sig_next_btn.pack(side="right", padx=(4, 0))
-        self._sig_prev_btn = ttk.Button(sig_hdr, text="Prev", command=self._on_signals_prev)
+        self._sig_prev_btn = ttk.Button(s_hdr, text="Prev", command=self._on_signals_prev)
         self._sig_prev_btn.pack(side="right")
-
-        ttk.Label(sig_hdr, text="PerPage").pack(side="right")
+        ttk.Label(s_hdr, text="PerPage").pack(side="right")
         sig_page_combo = ttk.Combobox(
-            sig_hdr,
+            s_hdr,
             textvariable=self.var_sig_page_size,
             values=["25", "50", "100", "200"],
             width=5,
@@ -256,41 +315,84 @@ class App(tk.Tk):
         sig_page_combo.pack(side="right", padx=(4, 10))
         sig_page_combo.bind("<<ComboboxSelected>>", lambda _e: self._on_signals_page_size())
 
+        s_pane = ttk.PanedWindow(tab_signals, orient="vertical")
+        s_pane.pack(fill="both", expand=True, pady=(10, 0))
+
+        s_top = ttk.Frame(s_pane)
+        s_bot = ttk.Frame(s_pane)
+        s_pane.add(s_top, weight=3)
+        s_pane.add(s_bot, weight=2)
+
         self.sig_tree = ttk.Treeview(
-            right,
+            s_top,
             columns=("ts", "symbol", "strategy", "dir", "score", "entry", "stop", "tp1", "tp2"),
             show="headings",
-            height=18,
+            selectmode="browse",
         )
         for col, w in [
             ("ts", 170),
             ("symbol", 90),
-            ("strategy", 110),
-            ("dir", 60),
-            ("score", 55),
-            ("entry", 120),
+            ("strategy", 120),
+            ("dir", 70),
+            ("score", 60),
+            ("entry", 130),
             ("stop", 90),
             ("tp1", 90),
             ("tp2", 90),
         ]:
             self.sig_tree.heading(col, text=col)
-            self.sig_tree.column(col, width=w, anchor="w")
-        self.sig_tree.pack(fill="both", expand=True)
+            self.sig_tree.column(col, width=w, anchor="w", stretch=(col == "entry"))
+        self.sig_tree.tag_configure("odd", background="#f7f7f7")
         self.sig_tree.bind("<<TreeviewSelect>>", self._on_signal_select)
+        s_scroll = ttk.Scrollbar(s_top, orient="vertical", command=self.sig_tree.yview)
+        self.sig_tree.configure(yscrollcommand=s_scroll.set)
+        self.sig_tree.pack(side="left", fill="both", expand=True)
+        s_scroll.pack(side="right", fill="y")
 
-        ttk.Label(right, text="Signal Details").pack(anchor="w", pady=(6, 0))
-        self.sig_details = tk.Text(right, height=10)
-        self.sig_details.pack(fill="both", expand=False)
+        ttk.Label(s_bot, text="Signal Details").pack(anchor="w")
+        details_wrap = ttk.Frame(s_bot)
+        details_wrap.pack(fill="both", expand=True, pady=(6, 0))
+        self.sig_details = tk.Text(details_wrap, height=10, wrap="none")
+        d_scroll = ttk.Scrollbar(details_wrap, orient="vertical", command=self.sig_details.yview)
+        self.sig_details.configure(yscrollcommand=d_scroll.set)
+        self.sig_details.pack(side="left", fill="both", expand=True)
+        d_scroll.pack(side="right", fill="y")
 
-        log_frame = ttk.Frame(main)
-        main.add(log_frame, weight=1)
-        ttk.Label(log_frame, text="Log").pack(anchor="w")
-        self.log_text = tk.Text(log_frame, height=8)
-        self.log_text.pack(fill="both", expand=True)
+        # Log tab
+        log_hdr = ttk.Frame(tab_log)
+        log_hdr.pack(fill="x")
+        ttk.Button(log_hdr, text="Clear", command=lambda: self.log_text.delete("1.0", "end")).pack(side="left")
 
-        status = ttk.Frame(self)
-        status.pack(fill="x", padx=10, pady=(0, 10))
+        log_wrap = ttk.Frame(tab_log)
+        log_wrap.pack(fill="both", expand=True, pady=(10, 0))
+        self.log_text = tk.Text(log_wrap, height=10, wrap="none")
+        l_scroll = ttk.Scrollbar(log_wrap, orient="vertical", command=self.log_text.yview)
+        self.log_text.configure(yscrollcommand=l_scroll.set)
+        self.log_text.pack(side="left", fill="both", expand=True)
+        l_scroll.pack(side="right", fill="y")
+
+        status = ttk.Frame(root)
+        status.pack(fill="x", pady=(10, 0))
         ttk.Label(status, textvariable=self._status_var).pack(anchor="w")
+
+    def _toggle_advanced(self) -> None:
+        self._adv_open = not bool(getattr(self, "_adv_open", False))
+        if self._adv_open:
+            try:
+                self._adv_btn.configure(text="Advanced ▴")
+            except Exception:
+                pass
+            # Keep Advanced between timebar and tabs.
+            try:
+                self._adv_frame.pack(fill="x", pady=(10, 0), before=self._notebook)
+            except Exception:
+                self._adv_frame.pack(fill="x", pady=(10, 0))
+        else:
+            try:
+                self._adv_btn.configure(text="Advanced ▾")
+            except Exception:
+                pass
+            self._adv_frame.pack_forget()
 
     def _build_provider(self, name: str):
         name = (name or "").strip().lower()
@@ -463,12 +565,13 @@ class App(tk.Tk):
         except Exception as e:
             self._log(f"ERROR load watchlist: {e}")
             return
-        for sym, group, enabled, note in symbols:
+        for idx, (sym, group, enabled, note) in enumerate(symbols, start=1):
             self.watch_tree.insert(
                 "",
                 "end",
                 iid=sym,
                 values=(sym, group or "", "1" if enabled else "0", note or "", "", "", ""),
+                tags=("odd",) if (idx % 2 == 1) else (),
             )
         self._log(f"watchlist loaded: {len(symbols)} symbols")
 
@@ -661,7 +764,7 @@ class App(tk.Tk):
             self._log(f"ERROR load signals: {e}")
             return
 
-        for r in rows:
+        for idx, r in enumerate(rows, start=1):
             self._signals_cache[r.id] = r
             entry = f"[{r.entry_low:.3f},{r.entry_high:.3f}]"
             self.sig_tree.insert(
@@ -679,6 +782,7 @@ class App(tk.Tk):
                     f"{r.tp1:.3f}",
                     f"{r.tp2:.3f}",
                 ),
+                tags=("odd",) if (idx % 2 == 1) else (),
             )
         page_size = self._snapshot_sig_page_size()
         if self._sig_total <= 0:

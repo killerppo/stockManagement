@@ -44,10 +44,12 @@
 启动：`python scripts/app_gui.py`
 
 ### 页面/区域
+- 顶部控制区：Provider / group / limit / window_minutes / signal_window_minutes / Start/End（可展开“Advanced”显示循环/策略等参数）
+- 主区域：Tab 结构（Watchlist / Signals / Log），避免信息挤在一个页面里
 - Watchlist 表格：symbol/group/enabled/最近时间/最近收盘价/本次变更数
 - Signals 表格：信号列表（从 `data/signals.sqlite` 读取，支持分页：上一页/下一页 + 每页条数）
 - Signal Details：选中某条信号后展示 reasons / params / risk_flags
-- Log：运行日志与错误
+- Log：运行日志与错误（独立 Tab，带滚动条，确保可见）
 - K线视图：展示选中标的的 K 线（1m/5m/15m/60m），用于快速确认走势
   - 缓存优先（`data/bars.sqlite`）；当选择 provider 且缓存覆盖不足时，可能直接拉取 5m/15m/60m 以覆盖展示窗口（不做指标叠加与复杂交互）
 - 回测视图：可在 GUI 触发回测与参数优化，展示摘要与（可选）逐笔 CSV
