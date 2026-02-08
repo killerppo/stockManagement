@@ -6,6 +6,8 @@
 - 新增脚本：
   - `scripts/watchlist_validate.py`（校验自选股）
   - `scripts/watchlist_fetch_eastmoney.py`（批量抓取分钟数据到 SQLite 缓存）
+- 新增保存接口：`save_watchlist(...)`，支持 GUI 写回 CSV
+- GUI 支持 watchlist 的可视化增删改查（Add/Edit/Delete/Save）
 
 ## Doing
 - （暂无）
