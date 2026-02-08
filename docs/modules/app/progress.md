@@ -10,7 +10,7 @@
 - 实现桌面 GUI（Tkinter）：`scripts/app_gui.py`
 - GUI 增强：Refresh+Scan、一键循环（Start Loop）、Signal Details 面板
 - GUI 增强：支持 Start/End 选择（Use Start/End + Pick 对话框 + 今日快捷）
-- GUI 增强：K 线窗口（1m/5m/15m/60m，基于缓存数据）
+- GUI 增强：K 线窗口（1m/5m/15m/60m，缓存优先；必要时可直拉高周期以覆盖窗口）
 - GUI 增强：Watchlist 可视化增删改查并写回 CSV
 - Refresh+Scan 使用 GUI 策略参数（lookback/vol_factor）
 - 最小验证：`python scripts/watchlist_validate.py` 通过

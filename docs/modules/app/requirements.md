@@ -49,7 +49,7 @@
 - Signal Details：选中某条信号后展示 reasons / params / risk_flags
 - Log：运行日志与错误
 - K线视图：展示选中标的的 K 线（1m/5m/15m/60m），用于快速确认走势
-  - 基于缓存数据（`data/bars.sqlite`），不做指标叠加与复杂交互
+  - 缓存优先（`data/bars.sqlite`）；当选择 provider 且缓存覆盖不足时，可能直接拉取 5m/15m/60m 以覆盖展示窗口（不做指标叠加与复杂交互）
 - 回测视图：可在 GUI 触发回测与参数优化，展示摘要与（可选）逐笔 CSV
 
 ### 操作按钮（必须）

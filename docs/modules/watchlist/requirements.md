@@ -30,5 +30,5 @@
 ## 验收点（MVP）
 - 在没有任何在线数据源的情况下，可加载并校验 `config/watchlist.csv`
 - 可按 `group` 过滤输出符号列表
-- 与 data 模块联动：对 watchlist 批量执行 `ensure_1m`（Eastmoney 主用）
+- 与 data 模块联动：对 watchlist 批量执行 `ensure_1m`（provider 由 app/脚本选择；注意部分免费源 1m 覆盖可能有限）
 - GUI 可视化增删改查后能正确写回 `config/watchlist.csv` 并再次通过校验
