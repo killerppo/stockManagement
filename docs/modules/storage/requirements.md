@@ -38,8 +38,8 @@
 ## 对外接口（供 app 使用）
 - `init()`
 - `insert_signals(signals, strategy_id, params_snapshot) -> inserted_count`
-- `list_recent(limit=50, offset=0, symbol=None) -> list[SignalRow]`（用于 GUI 分页）
-- `count_signals(symbol=None) -> int`（用于 GUI 计算页数/禁用翻页）
+- `list_recent(limit=50, offset=0, symbol=None, symbols=None) -> list[SignalRow]`（用于 GUI 分页；`symbol` 与 `symbols` 二选一）
+- `count_signals(symbol=None, symbols=None) -> int`（用于 GUI 计算页数/禁用翻页；`symbol` 与 `symbols` 二选一）
 
 ## 约束
 - 任何日志字段变更必须先更新此文档与 `docs/PRD.md`，再改代码。

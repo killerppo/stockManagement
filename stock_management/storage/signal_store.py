@@ -133,11 +133,18 @@ class SQLiteSignalStore:
         finally:
             conn.close()
 
-    def count_signals(self, *, symbol: str | None = None) -> int:
+    def count_signals(self, *, symbol: str | None = None, symbols: list[str] | None = None) -> int:
         self.init()
+        if symbol and symbols:
+            raise ValueError("symbol and symbols are mutually exclusive")
         conn = self._connect()
         try:
-            if symbol:
+            if symbols is not None:
+                if not symbols:
+                    return 0
+                placeholders = ",".join(["?"] * len(symbols))
+                cur = conn.execute(f"SELECT COUNT(1) FROM signals WHERE symbol IN ({placeholders})", tuple(symbols))
+            elif symbol:
                 cur = conn.execute("SELECT COUNT(1) FROM signals WHERE symbol=?", (symbol,))
             else:
                 cur = conn.execute("SELECT COUNT(1) FROM signals")
@@ -146,13 +153,41 @@ class SQLiteSignalStore:
         finally:
             conn.close()
 
-    def list_recent(self, *, limit: int = 50, offset: int = 0, symbol: str | None = None) -> list[SignalRow]:
+    def list_recent(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        symbol: str | None = None,
+        symbols: list[str] | None = None,
+    ) -> list[SignalRow]:
         self.init()
+        if symbol and symbols:
+            raise ValueError("symbol and symbols are mutually exclusive")
         lim = max(1, min(500, int(limit)))
         off = max(0, int(offset))
         conn = self._connect()
         try:
-            if symbol:
+            if symbols is not None:
+                if not symbols:
+                    rows = []
+                else:
+                    placeholders = ",".join(["?"] * len(symbols))
+                    cur = conn.execute(
+                        f"""
+                        SELECT id, symbol, ts, freq, strategy_id, direction, score,
+                               entry_low, entry_high, stop_loss, tp1, tp2,
+                               reasons_json, risk_flags_json, params_json, created_at
+                        FROM signals
+                        WHERE symbol IN ({placeholders})
+                        ORDER BY ts DESC, id DESC
+                        LIMIT ?
+                        OFFSET ?
+                        """,
+                        tuple(symbols) + (lim, off),
+                    )
+                    rows = cur.fetchall()
+            elif symbol:
                 cur = conn.execute(
                     """
                     SELECT id, symbol, ts, freq, strategy_id, direction, score,
@@ -166,6 +201,7 @@ class SQLiteSignalStore:
                     """,
                     (symbol, lim, off),
                 )
+                rows = cur.fetchall()
             else:
                 cur = conn.execute(
                     """
@@ -179,7 +215,7 @@ class SQLiteSignalStore:
                     """,
                     (lim, off),
                 )
-            rows = cur.fetchall()
+                rows = cur.fetchall()
         finally:
             conn.close()
 

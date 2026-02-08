@@ -105,6 +105,7 @@ class App(tk.Tk):
 
         self._signals_cache: dict[int, object] = {}
         self.var_sig_page_size = tk.StringVar(value="50")
+        self.var_sig_scope = tk.StringVar(value="watchlist")
         self._sig_offset = 0
         self._sig_total = 0
         self._sig_page_var = tk.StringVar(value="")
@@ -298,6 +299,17 @@ class App(tk.Tk):
         ttk.Button(s_hdr, text="Scan Signals", command=self._on_scan).pack(side="left")
         ttk.Button(s_hdr, text="Refresh+Scan", command=self._on_refresh_scan).pack(side="left", padx=(6, 0))
         ttk.Button(s_hdr, text="Reload", command=lambda: self._reload_signals()).pack(side="left", padx=(6, 0))
+
+        ttk.Label(s_hdr, text="Scope").pack(side="left", padx=(14, 0))
+        sig_scope_combo = ttk.Combobox(
+            s_hdr,
+            textvariable=self.var_sig_scope,
+            values=["watchlist", "all"],
+            width=10,
+            state="readonly",
+        )
+        sig_scope_combo.pack(side="left", padx=(6, 0))
+        sig_scope_combo.bind("<<ComboboxSelected>>", lambda _e: self._on_signals_scope())
 
         ttk.Label(s_hdr, textvariable=self._sig_page_var).pack(side="right", padx=(0, 8))
         self._sig_next_btn = ttk.Button(s_hdr, text="Next", command=self._on_signals_next)
@@ -574,6 +586,9 @@ class App(tk.Tk):
                 tags=("odd",) if (idx % 2 == 1) else (),
             )
         self._log(f"watchlist loaded: {len(symbols)} symbols")
+        if (self.var_sig_scope.get() or "watchlist").strip().lower() != "all":
+            self._sig_offset = 0
+            self._reload_signals(reason="Watchlist Changed")
 
     def _selected_symbol(self) -> str | None:
         sel = self.watch_tree.selection()
@@ -732,6 +747,11 @@ class App(tk.Tk):
         self._log(f"signals page_size -> {self._snapshot_sig_page_size()}")
         self._reload_signals(reason="Signals PageSize")
 
+    def _on_signals_scope(self) -> None:
+        self._sig_offset = 0
+        self._log(f"signals scope -> {self.var_sig_scope.get()}")
+        self._reload_signals(reason="Signals Scope")
+
     def _on_signals_prev(self) -> None:
         page_size = self._snapshot_sig_page_size()
         self._sig_offset = max(0, self._sig_offset - page_size)
@@ -751,7 +771,18 @@ class App(tk.Tk):
         self._signals_cache.clear()
         try:
             page_size = self._snapshot_sig_page_size()
-            total = self.signal_store.count_signals()
+            scope = (self.var_sig_scope.get() or "watchlist").strip().lower()
+            symbols: list[str] | None
+            if scope == "all":
+                symbols = None
+            else:
+                try:
+                    symbols = [s for s, _g, _e, _n in self._snapshot_symbols()]
+                except Exception as e:
+                    self._log(f"WARN signals scope=watchlist but watchlist invalid: {e}")
+                    symbols = None
+
+            total = self.signal_store.count_signals(symbols=symbols)
             self._sig_total = total
             if total <= 0:
                 self._sig_offset = 0
@@ -759,7 +790,7 @@ class App(tk.Tk):
                 last_offset = ((total - 1) // page_size) * page_size
                 if self._sig_offset > last_offset:
                     self._sig_offset = last_offset
-            rows = self.signal_store.list_recent(limit=page_size, offset=self._sig_offset)
+            rows = self.signal_store.list_recent(limit=page_size, offset=self._sig_offset, symbols=symbols)
         except Exception as e:
             self._log(f"ERROR load signals: {e}")
             return
