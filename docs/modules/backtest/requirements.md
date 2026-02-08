@@ -1,0 +1,58 @@
+# backtest 模块｜需求
+
+## 目标
+- 基于本地缓存数据回测现有策略（`breakout_5m_v1`），输出效果指标。
+- 支持基础参数优化（网格搜索）以改进效果。
+
+## 范围（已确认）
+- 数据来源：本地 `data/bars.sqlite`（由 data 模块维护）。
+- 频率：以 5m bar 为主（由 1m 聚合）。
+- 策略：`breakout_5m`（signals 模块）。
+- 不涉及：实盘下单、通知、图形化结果。
+
+## 输入
+- `symbol` 或 watchlist（`config/watchlist.csv` + `group` 过滤）。
+- 时间窗口 `start/end`（ISO 时间，支持 `Asia/Shanghai`）。
+- 回测参数：`fill_bars`、`hold_bars`、`tp_level`、`exit_priority`、`entry_mode`。
+- 成本参数：`fee_bps`、`slippage_bps`（双边计入）。
+- 策略参数：`BreakoutParams`（`lookback`、`vol_factor`、`atr_buffer_k`、`pct_buffer`、`swing_lookback`）。
+
+## 输出
+- 控制台摘要：`trades` / `win_rate` / `avg_return` / `avg_r` / `profit_factor` / `max_drawdown`。
+- 可选输出：逐笔交易明细（CSV）。
+
+## 回测规则（MVP）
+- 信号生成：使用 `breakout_scan_5m` 在窗口内扫描。
+- 入场：信号后 `fill_bars` 内若价格区间覆盖目标价，则成交；否则忽略该信号。
+  - `entry_mode=entry_mid`：使用入场区间中值
+  - `entry_mode=entry_low`：使用入场区间下沿
+  - `entry_mode=entry_high`：使用入场区间上沿
+  - `entry_mode=trigger`：使用触发价（初版等同 `entry_low`）
+- 出场：逐根 bar 检查触发 `stop_loss` 或 `take_profit(tp_level)`。
+  - 同一根 bar 同时触发时，按 `exit_priority`（`stop_first` / `tp_first`）。
+- 期限：超过 `hold_bars` 未触发则按最后一根 bar 的 `close` 平仓。
+- 交易互不影响（不做持仓冲突与资金管理）。
+- 成本：`fee_bps + slippage_bps` 双边计入（入场加价，出场减价）。
+
+## 评估指标（MVP）
+- `trades`、`wins`、`win_rate`
+- `avg_return`、`avg_r`
+- `avg_win`、`avg_loss`、`expectancy`
+- `profit_factor`
+- `max_drawdown`（按累计收益曲线计算）
+
+## 参数优化（MVP）
+- 网格搜索默认覆盖 `lookback` 与 `vol_factor`，其他参数固定。
+- 评价指标默认 `avg_return`（可选 `win_rate` / `profit_factor` / `avg_r`）。
+- 输出最佳参数与指标。
+
+## CLI 约定
+- 脚本：`scripts/backtest_breakout_5m.py`
+- 支持 `--symbol` 或 `--watchlist/--group`
+- `--start/--end` 必填
+- `--optimize` 触发优化
+- `--trades-csv` 输出逐笔交易明细
+
+## 验收点
+- 在已有缓存数据下可运行回测并输出指标。
+- 可执行一次参数优化并输出最佳参数。
