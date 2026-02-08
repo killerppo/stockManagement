@@ -22,13 +22,16 @@
 - 统一脚本默认数据目录：仓库根 `data/`（避免在 `scripts/` 下生成 `scripts/data/`）
 - 新增 provider 回退封装：`stock_management/data/providers/fallback_provider.py`
 - 新增缓存优先刷新语义：`DataService.ensure_1m`（`stock_management/data/service.py`）
+- `DataService.get_bars` 增强：当 1m 缓存覆盖不足时，允许 provider 直接拉取 5m/15m/60m 补齐（例如 AkShare），用于长窗口扫描/回测
+- Eastmoney 增强：支持按日回补长区间（规避 2000 条上限）
+- 新增在线 provider：AkShare 分钟 K线接入（用于更长周期历史的扫描/回测）
 
 ## Doing
 - （暂无）
 
 ## Next
 - 明确并固化 `ts` 的定义（分钟开始/结束）与全项目一致性策略
-- 补充：在线 provider 的限流/重试/分页策略（按真实运行反馈迭代）
+- 补充：在线 provider 的限流/重试策略（按真实运行反馈迭代）
 
 ## Blockers
-- 免费在线数据源尚未选定（先用离线 provider 推进开发）
+- 部分免费在线数据源的 1m 历史覆盖有限（例如 AkShare 1m 可能仅最近交易日）；长窗口依赖 5m/15m/60m 拉取或后续引入付费源/更稳定数据源

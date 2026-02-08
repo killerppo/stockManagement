@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from datetime import timedelta
 
 from .aggregate import aggregate_1m
 from .models import Bar
@@ -37,10 +38,37 @@ class DataService:
         bars_1m = self.store.load_1m(symbol=symbol, start=start, end=end)
         if freq == "1m":
             return bars_1m
-        if freq == "5m":
-            return aggregate_1m(bars_1m, 5)
-        if freq == "15m":
-            return aggregate_1m(bars_1m, 15)
-        if freq == "60m":
-            return aggregate_1m(bars_1m, 60)
-        raise ValueError(f"unsupported freq: {freq}")
+        freq = freq.lower().strip()
+        freq_to_n = {"5m": 5, "15m": 15, "60m": 60}
+        if freq not in freq_to_n:
+            raise ValueError(f"unsupported freq: {freq}")
+
+        bars_out = aggregate_1m(bars_1m, freq_to_n[freq])
+
+        # If cache coverage is insufficient, allow provider-specific fallback for higher timeframes.
+        # This is especially useful when a provider has longer history for 5m than 1m.
+        if self.provider is not None and hasattr(self.provider, "fetch_bars"):
+            mins = freq_to_n[freq]
+            need_fallback = False
+            if not bars_out:
+                need_fallback = True
+            else:
+                if bars_out[0].ts > (start + timedelta(minutes=mins)):
+                    need_fallback = True
+                if bars_out[-1].ts < (end - timedelta(minutes=mins)):
+                    need_fallback = True
+
+            if need_fallback:
+                try:
+                    fetched = self.provider.fetch_bars(freq=freq, symbol=symbol, start=start, end=end)  # type: ignore[attr-defined]
+                except Exception:
+                    fetched = []
+                if fetched:
+                    by_ts: dict[datetime, Bar] = {b.ts: b for b in bars_out}
+                    for b in fetched:
+                        by_ts[b.ts] = b
+                    merged = list(by_ts.values())
+                    merged.sort(key=lambda b: b.ts)
+                    return merged
+
+        return bars_out

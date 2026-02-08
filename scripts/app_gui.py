@@ -20,9 +20,10 @@ import sys
 sys.path.insert(0, str(REPO_ROOT))
 
 from stock_management.data.calendar import TZ_SHANGHAI  # noqa: E402
-from stock_management.data.providers import EastmoneyKlineProvider  # noqa: E402
+from stock_management.data.providers import AkshareKlineProvider, EastmoneyKlineProvider  # noqa: E402
 from stock_management.data.service import DataService  # noqa: E402
 from stock_management.indicators import IndicatorParams  # noqa: E402
+from stock_management.backtest import backtest_breakout_5m, optimize_breakout_5m, summarize_trades  # noqa: E402
 from stock_management.signals import breakout_scan_5m  # noqa: E402
 from stock_management.signals.params import BreakoutParams  # noqa: E402
 from stock_management.storage import SQLiteSignalStore  # noqa: E402
@@ -95,12 +96,14 @@ class App(tk.Tk):
         self.data_dir = self.repo_root / "data"
         self.signals_db = self.data_dir / "signals.sqlite"
 
-        provider = EastmoneyKlineProvider()
+        self.var_provider = tk.StringVar(value="akshare")
+        provider = self._build_provider(self.var_provider.get())
         self.data_service = DataService.with_default_store(provider=provider, data_dir=self.data_dir)
         self.signal_store = SQLiteSignalStore(self.signals_db)
 
         self._signals_cache: dict[int, object] = {}
         self._watch_items: list[WatchItem] = []
+        self._backtest_window: BacktestWindow | None = None
         self._build_ui()
         self.after(100, self._drain_logs)
         self._load_watchlist()
@@ -110,6 +113,15 @@ class App(tk.Tk):
     def _build_ui(self) -> None:
         top = ttk.Frame(self)
         top.pack(fill="x", padx=10, pady=8)
+
+        ttk.Label(top, text="Provider").grid(row=0, column=0, sticky="w")
+        ttk.Combobox(
+            top,
+            textvariable=self.var_provider,
+            values=["akshare", "eastmoney"],
+            width=10,
+            state="readonly",
+        ).grid(row=0, column=1, sticky="w", padx=6)
 
         self.var_group = tk.StringVar(value="")
         self.var_limit = tk.StringVar(value="0")
@@ -124,39 +136,39 @@ class App(tk.Tk):
         self.var_use_fixed = tk.BooleanVar(value=False)
         self.var_log_signals = tk.BooleanVar(value=True)
 
-        ttk.Label(top, text="Group").grid(row=0, column=0, sticky="w")
-        ttk.Entry(top, textvariable=self.var_group, width=12).grid(row=0, column=1, padx=6)
+        ttk.Label(top, text="Group").grid(row=0, column=2, sticky="w")
+        ttk.Entry(top, textvariable=self.var_group, width=12).grid(row=0, column=3, padx=6)
 
-        ttk.Label(top, text="Limit").grid(row=0, column=2, sticky="w")
-        ttk.Entry(top, textvariable=self.var_limit, width=6).grid(row=0, column=3, padx=6)
+        ttk.Label(top, text="Limit").grid(row=0, column=4, sticky="w")
+        ttk.Entry(top, textvariable=self.var_limit, width=6).grid(row=0, column=5, padx=6)
 
-        ttk.Label(top, text="Window(min)").grid(row=0, column=4, sticky="w")
-        ttk.Entry(top, textvariable=self.var_window, width=8).grid(row=0, column=5, padx=6)
+        ttk.Label(top, text="Window(min)").grid(row=0, column=6, sticky="w")
+        ttk.Entry(top, textvariable=self.var_window, width=8).grid(row=0, column=7, padx=6)
 
-        ttk.Label(top, text="SignalWindow(min)").grid(row=0, column=6, sticky="w")
-        ttk.Entry(top, textvariable=self.var_signal_window, width=10).grid(row=0, column=7, padx=6)
+        ttk.Label(top, text="SignalWindow(min)").grid(row=0, column=8, sticky="w")
+        ttk.Entry(top, textvariable=self.var_signal_window, width=10).grid(row=0, column=9, padx=6)
 
-        ttk.Label(top, text="Interval(s)").grid(row=0, column=8, sticky="w")
-        ttk.Entry(top, textvariable=self.var_interval, width=8).grid(row=0, column=9, padx=6)
+        ttk.Label(top, text="Interval(s)").grid(row=0, column=10, sticky="w")
+        ttk.Entry(top, textvariable=self.var_interval, width=8).grid(row=0, column=11, padx=6)
 
-        ttk.Label(top, text="Lookback").grid(row=1, column=8, sticky="w", pady=(6, 0))
-        ttk.Entry(top, textvariable=self.var_lookback, width=8).grid(row=1, column=9, padx=6, pady=(6, 0))
+        ttk.Label(top, text="Lookback").grid(row=1, column=10, sticky="w", pady=(6, 0))
+        ttk.Entry(top, textvariable=self.var_lookback, width=8).grid(row=1, column=11, padx=6, pady=(6, 0))
 
-        ttk.Label(top, text="VolFactor").grid(row=2, column=8, sticky="w", pady=(6, 0))
-        ttk.Entry(top, textvariable=self.var_vol_factor, width=8).grid(row=2, column=9, padx=6, pady=(6, 0))
+        ttk.Label(top, text="VolFactor").grid(row=2, column=10, sticky="w", pady=(6, 0))
+        ttk.Entry(top, textvariable=self.var_vol_factor, width=8).grid(row=2, column=11, padx=6, pady=(6, 0))
 
-        ttk.Label(top, text="Start").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(top, text="Start").grid(row=1, column=2, sticky="w", pady=(6, 0))
         self.start_entry = ttk.Entry(top, textvariable=self.var_start, width=28, state="disabled")
-        self.start_entry.grid(row=1, column=1, columnspan=2, sticky="we", padx=6, pady=(6, 0))
-        ttk.Button(top, text="Pick", command=lambda: self._pick_datetime(self.var_start, title="Pick Start")).grid(row=1, column=3, sticky="w", pady=(6, 0))
+        self.start_entry.grid(row=1, column=3, columnspan=2, sticky="we", padx=6, pady=(6, 0))
+        ttk.Button(top, text="Pick", command=lambda: self._pick_datetime(self.var_start, title="Pick Start")).grid(row=1, column=5, sticky="w", pady=(6, 0))
 
-        ttk.Label(top, text="End").grid(row=1, column=4, sticky="w", pady=(6, 0))
+        ttk.Label(top, text="End").grid(row=1, column=6, sticky="w", pady=(6, 0))
         self.end_entry = ttk.Entry(top, textvariable=self.var_end, width=28, state="disabled")
-        self.end_entry.grid(row=1, column=5, columnspan=2, sticky="we", padx=6, pady=(6, 0))
-        ttk.Button(top, text="Pick", command=lambda: self._pick_datetime(self.var_end, title="Pick End")).grid(row=1, column=7, sticky="w", pady=(6, 0))
+        self.end_entry.grid(row=1, column=7, columnspan=2, sticky="we", padx=6, pady=(6, 0))
+        ttk.Button(top, text="Pick", command=lambda: self._pick_datetime(self.var_end, title="Pick End")).grid(row=1, column=9, sticky="w", pady=(6, 0))
 
         btns = ttk.Frame(top)
-        btns.grid(row=0, column=10, rowspan=2, padx=(12, 0), sticky="ns")
+        btns.grid(row=0, column=12, rowspan=2, padx=(12, 0), sticky="ns")
 
         ttk.Button(btns, text="Reload Watchlist", command=self._load_watchlist).pack(fill="x", pady=2)
         ttk.Button(btns, text="Add Symbol", command=self._on_add_symbol).pack(fill="x", pady=2)
@@ -168,16 +180,28 @@ class App(tk.Tk):
         ttk.Button(btns, text="Refresh+Scan", command=self._on_refresh_scan).pack(fill="x", pady=2)
         ttk.Button(btns, text="Reload Signals", command=self._reload_signals).pack(fill="x", pady=2)
         ttk.Button(btns, text="Show Kline", command=self._on_show_kline).pack(fill="x", pady=2)
+        ttk.Button(btns, text="Backtest", command=self._on_open_backtest).pack(fill="x", pady=2)
         ttk.Button(btns, text="Start Loop", command=self._on_start_loop).pack(fill="x", pady=2)
         ttk.Button(btns, text="Stop", command=self._on_stop).pack(fill="x", pady=2)
 
-        ttk.Checkbutton(top, text="Log signals to SQLite", variable=self.var_log_signals).grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
-        ttk.Checkbutton(top, text="Auto scan in loop", variable=self.var_auto_scan).grid(row=2, column=3, columnspan=3, sticky="w", pady=(6, 0))
-        ttk.Checkbutton(top, text="Use Start/End", variable=self.var_use_fixed, command=self._on_toggle_fixed).grid(row=2, column=6, columnspan=2, sticky="w", pady=(6, 0))
-        ttk.Button(top, text="Today 09:30-15:00", command=self._fill_today_session).grid(row=2, column=8, columnspan=2, sticky="w", pady=(6, 0))
+        ttk.Checkbutton(
+            top, text="Log signals to SQLite", variable=self.var_log_signals, command=self._on_toggle_log_signals
+        ).grid(row=2, column=2, columnspan=3, sticky="w", pady=(6, 0))
+        ttk.Checkbutton(top, text="Auto scan in loop", variable=self.var_auto_scan, command=self._on_toggle_auto_scan).grid(
+            row=2, column=5, columnspan=3, sticky="w", pady=(6, 0)
+        )
+        ttk.Checkbutton(top, text="Use Start/End", variable=self.var_use_fixed, command=self._on_toggle_fixed).grid(
+            row=2, column=8, columnspan=2, sticky="w", pady=(6, 0)
+        )
+        ttk.Button(top, text="Today 09:30-15:00", command=self._fill_today_session).grid(
+            row=2, column=10, columnspan=2, sticky="w", pady=(6, 0)
+        )
 
-        mid = ttk.PanedWindow(self, orient="horizontal")
-        mid.pack(fill="both", expand=True, padx=10, pady=8)
+        main = ttk.PanedWindow(self, orient="vertical")
+        main.pack(fill="both", expand=True, padx=10, pady=8)
+
+        mid = ttk.PanedWindow(main, orient="horizontal")
+        main.add(mid, weight=4)
 
         left = ttk.Frame(mid)
         right = ttk.Frame(mid)
@@ -232,15 +256,31 @@ class App(tk.Tk):
         self.sig_details = tk.Text(right, height=10)
         self.sig_details.pack(fill="both", expand=False)
 
-        bottom = ttk.Frame(self)
-        bottom.pack(fill="both", expand=False, padx=10, pady=(0, 10))
-        ttk.Label(bottom, text="Log").pack(anchor="w")
-        self.log_text = tk.Text(bottom, height=10)
+        log_frame = ttk.Frame(main)
+        main.add(log_frame, weight=1)
+        ttk.Label(log_frame, text="Log").pack(anchor="w")
+        self.log_text = tk.Text(log_frame, height=8)
         self.log_text.pack(fill="both", expand=True)
 
         status = ttk.Frame(self)
         status.pack(fill="x", padx=10, pady=(0, 10))
         ttk.Label(status, textvariable=self._status_var).pack(anchor="w")
+
+    def _build_provider(self, name: str):
+        name = (name or "").strip().lower()
+        if name == "akshare":
+            return AkshareKlineProvider()
+        return EastmoneyKlineProvider()
+
+    def _ensure_provider(self) -> None:
+        # Rebuild service so all downstream (kline/backtest/scan) shares the same provider.
+        name = (self.var_provider.get() or "").strip().lower()
+        cur = getattr(self, "_provider_name", None)
+        if cur == name and getattr(self, "data_service", None) is not None:
+            return
+        self._provider_name = name
+        self._log(f"provider set to {name}")
+        self.data_service = DataService.with_default_store(provider=self._build_provider(name), data_dir=self.data_dir)
 
     def _set_status(self, msg: str) -> None:
         self._status_var.set(msg)
@@ -255,12 +295,19 @@ class App(tk.Tk):
 
     def _on_toggle_fixed(self) -> None:
         enabled = bool(self.var_use_fixed.get())
+        self._log(f"toggle: Use Start/End -> {enabled}")
         state = "normal" if enabled else "disabled"
         self.start_entry.configure(state=state)
         self.end_entry.configure(state=state)
         if not enabled:
             self.var_start.set("")
             self.var_end.set("")
+
+    def _on_toggle_log_signals(self) -> None:
+        self._log(f"toggle: Log signals -> {bool(self.var_log_signals.get())}")
+
+    def _on_toggle_auto_scan(self) -> None:
+        self._log(f"toggle: Auto scan -> {bool(self.var_auto_scan.get())}")
 
     def _fill_today_session(self) -> None:
         now = _now_minute()
@@ -271,8 +318,10 @@ class App(tk.Tk):
         self._on_toggle_fixed()
         self.var_start.set(_fmt_dt(start))
         self.var_end.set(_fmt_dt(end))
+        self._log(f"fill today session start={self.var_start.get()} end={self.var_end.get()}")
 
     def _pick_datetime(self, target_var: tk.StringVar, *, title: str) -> None:
+        self._log(f"pick datetime opened title={title}")
         dlg = tk.Toplevel(self)
         dlg.title(title)
         dlg.geometry("360x170")
@@ -314,6 +363,7 @@ class App(tk.Tk):
             target_var.set(_fmt_dt(dt))
             self.var_use_fixed.set(True)
             self._on_toggle_fixed()
+            self._log(f"pick datetime ok title={title} value={target_var.get()}")
             dlg.destroy()
 
         ttk.Button(frm, text="OK", command=ok).grid(row=3, column=0, pady=(10, 0), sticky="w")
@@ -375,6 +425,7 @@ class App(tk.Tk):
 
     # ---------- Actions ----------
     def _load_watchlist(self) -> None:
+        self._log("clicked: Reload Watchlist")
         self.watch_tree.delete(*self.watch_tree.get_children())
         try:
             items = load_watchlist(self.watchlist_path)
@@ -454,8 +505,10 @@ class App(tk.Tk):
         return result
 
     def _on_add_symbol(self) -> None:
+        self._log("clicked: Add Symbol")
         item = self._prompt_watch_item("Add Symbol")
         if item is None:
+            self._log("add symbol cancelled")
             return
         items = load_watchlist(self.watchlist_path)
         items.append(item)
@@ -468,6 +521,7 @@ class App(tk.Tk):
         self._load_watchlist()
 
     def _on_edit_symbol(self) -> None:
+        self._log("clicked: Edit Selected")
         sym = self._selected_symbol()
         if not sym:
             self._notify_error("Edit Selected", "Select a symbol first")
@@ -479,6 +533,7 @@ class App(tk.Tk):
             return
         updated = self._prompt_watch_item("Edit Symbol", initial=current)
         if updated is None:
+            self._log("edit symbol cancelled")
             return
         new_items: list[WatchItem] = []
         for it in items:
@@ -495,11 +550,13 @@ class App(tk.Tk):
         self._load_watchlist()
 
     def _on_delete_symbol(self) -> None:
+        self._log("clicked: Delete Selected")
         sym = self._selected_symbol()
         if not sym:
             self._notify_error("Delete Selected", "Select a symbol first")
             return
         if not messagebox.askyesno("Delete Selected", f"Delete {sym} from watchlist?"):
+            self._log("delete symbol cancelled")
             return
         items = [i for i in load_watchlist(self.watchlist_path) if i.symbol.upper() != sym.upper()]
         self._watch_items = items
@@ -507,6 +564,7 @@ class App(tk.Tk):
         self._load_watchlist()
 
     def _on_save_watchlist(self) -> None:
+        self._log("clicked: Save Watchlist")
         items = load_watchlist(self.watchlist_path)
         issues = validate_watchlist(items)
         if issues:
@@ -517,13 +575,24 @@ class App(tk.Tk):
         self._log("watchlist saved")
 
     def _on_show_kline(self) -> None:
+        self._log("clicked: Show Kline")
         sym = self._selected_symbol()
         if not sym:
             self._notify_error("Show Kline", "Select a symbol first")
             return
+        self._ensure_provider()
+        self._log(f"show kline symbol={sym}")
         KlineWindow(self, symbol=sym, data_service=self.data_service)
 
+    def _on_open_backtest(self) -> None:
+        self._log("clicked: Backtest")
+        if self._backtest_window and self._backtest_window.winfo_exists():
+            self._backtest_window.focus()
+            return
+        self._backtest_window = BacktestWindow(self)
+
     def _reload_signals(self) -> None:
+        self._log("clicked: Reload Signals")
         self.sig_tree.delete(*self.sig_tree.get_children())
         self._signals_cache.clear()
         try:
@@ -564,6 +633,7 @@ class App(tk.Tk):
         row = self._signals_cache.get(rid)
         if row is None:
             return
+        self._log(f"select signal id={rid} symbol={row.symbol}")
         # Render a readable detail view (JSON-ish).
         detail_lines = [
             f"id={row.id}",
@@ -591,7 +661,7 @@ class App(tk.Tk):
 
     def _on_stop(self) -> None:
         self._stop_event.set()
-        self._log("stop requested")
+        self._log("clicked: Stop")
 
     def _run_in_worker(self, fn) -> None:
         if self._worker and self._worker.is_alive():
@@ -612,6 +682,7 @@ class App(tk.Tk):
 
     def _on_refresh(self) -> None:
         try:
+            self._ensure_provider()
             fixed_window = self._snapshot_window()
             symbols = self._snapshot_symbols()
             window_minutes = self._snapshot_int(self.var_window, 60)
@@ -620,6 +691,10 @@ class App(tk.Tk):
             return
 
         self._log("clicked: Refresh Cache")
+        self._log(
+            f"refresh params provider={self.var_provider.get()} fixed={fixed_window is not None} "
+            f"window_minutes={window_minutes} symbols={len(symbols)}"
+        )
 
         def task() -> None:
             try:
@@ -641,6 +716,11 @@ class App(tk.Tk):
                     bars = self.data_service.get_bars(sym, "1m", start, end)
                     last_ts = bars[-1].ts.isoformat() if bars else ""
                     last_close = f"{bars[-1].close:.3f}" if bars else ""
+                    if fixed_window is not None or not bars:
+                        first_ts = bars[0].ts.isoformat() if bars else ""
+                        self._log(
+                            f"[{idx}/{len(symbols)}] {sym} bars_1m={len(bars)} first={first_ts} last={last_ts}"
+                        )
 
                     def update_row(symbol=sym, ch=changed, ts=last_ts, close=last_close) -> None:
                         if not self.watch_tree.exists(symbol):
@@ -664,6 +744,7 @@ class App(tk.Tk):
 
     def _on_refresh_scan(self) -> None:
         try:
+            self._ensure_provider()
             fixed_window = self._snapshot_window()
             symbols = self._snapshot_symbols()
             window_minutes = self._snapshot_int(self.var_window, 60)
@@ -676,6 +757,12 @@ class App(tk.Tk):
             return
 
         self._log("clicked: Refresh+Scan")
+        self._log(
+            f"refresh+scan params provider={self.var_provider.get()} fixed={fixed_window is not None} window_minutes={window_minutes} "
+            f"signal_window={signal_window} lookback={lookback} vol_factor={vol_factor} "
+            f"log_signals={log_signals} symbols={len(symbols)}"
+        )
+        scan_start = fixed_window[0] if fixed_window is not None else None
 
         def task() -> None:
             try:
@@ -708,12 +795,14 @@ class App(tk.Tk):
                 log_signals=log_signals,
                 lookback=lookback,
                 vol_factor=vol_factor,
+                start=scan_start,
             )
 
         self._run_in_worker(task)
 
     def _on_scan(self) -> None:
         try:
+            self._ensure_provider()
             fixed_window = self._snapshot_window()
             symbols = self._snapshot_symbols()
             window_minutes = self._snapshot_int(self.var_window, 60)
@@ -726,8 +815,14 @@ class App(tk.Tk):
         self._log("clicked: Scan Signals")
 
         end = (fixed_window[1] if fixed_window else self._window_now(window_minutes)[1])
+        scan_start = fixed_window[0] if fixed_window is not None else None
         lookback = self._snapshot_int(self.var_lookback, 20)
         vol_factor = float((self.var_vol_factor.get() or "1.5").strip())
+        self._log(
+            f"scan params provider={self.var_provider.get()} fixed={fixed_window is not None} window_minutes={window_minutes} "
+            f"signal_window={signal_window} lookback={lookback} vol_factor={vol_factor} "
+            f"log_signals={log_signals} symbols={len(symbols)}"
+        )
         self._run_in_worker(
             lambda: self._scan_task(
                 symbols=symbols,
@@ -736,6 +831,7 @@ class App(tk.Tk):
                 log_signals=log_signals,
                 lookback=lookback,
                 vol_factor=vol_factor,
+                start=scan_start,
             )
         )
 
@@ -748,9 +844,13 @@ class App(tk.Tk):
         log_signals: bool,
         lookback: int = 20,
         vol_factor: float = 1.5,
+        start: datetime | None = None,
     ) -> None:
         try:
-            sig_start = end - timedelta(minutes=max(signal_window_minutes, 1))
+            if start is None:
+                sig_start = end - timedelta(minutes=max(signal_window_minutes, 1))
+            else:
+                sig_start = start
             self._log(f"scan signals sig_start={sig_start.isoformat()} end={end.isoformat()} symbols={len(symbols)}")
 
             ind_params = IndicatorParams()
@@ -764,11 +864,30 @@ class App(tk.Tk):
                     self._log("scan stopped")
                     return
                 bars_5m = self.data_service.get_bars(sym, "5m", sig_start, end)
+                if bars_5m:
+                    self._log(
+                        f"[{idx}/{len(symbols)}] {sym} bars_5m={len(bars_5m)} "
+                        f"first={bars_5m[0].ts.isoformat()} last={bars_5m[-1].ts.isoformat()}"
+                    )
+                else:
+                    self._log(f"[{idx}/{len(symbols)}] {sym} bars_5m=0")
+                required = max(strat_params.lookback + 1, strat_params.swing_lookback + 1)
+                if len(bars_5m) < required:
+                    self._log(
+                        f"[{idx}/{len(symbols)}] {sym} skip: bars_5m<{required} "
+                        f"(lookback={strat_params.lookback} swing_lb={strat_params.swing_lookback})"
+                    )
+                    continue
                 sigs = breakout_scan_5m(symbol=sym, bars_5m=bars_5m, ind_params=ind_params, params=strat_params)
                 emitted += len(sigs)
 
                 if log_signals and sigs:
-                    stored += self.signal_store.insert_signals(sigs, strategy_id="breakout_5m_v1", params_snapshot=params_snapshot)
+                    added = self.signal_store.insert_signals(
+                        sigs, strategy_id="breakout_5m_v1", params_snapshot=params_snapshot
+                    )
+                    stored += added
+                    if added == 0:
+                        self._log(f"[{idx}/{len(symbols)}] {sym} signals emitted but stored=0 (likely duplicates)")
 
                 self._log(f"[{idx}/{len(symbols)}] {sym} signals={len(sigs)}")
 
@@ -780,6 +899,7 @@ class App(tk.Tk):
 
     def _on_start_loop(self) -> None:
         try:
+            self._ensure_provider()
             fixed_window = self._snapshot_window()
             if fixed_window is not None:
                 raise RuntimeError("Loop mode requires Start/End to be empty (rolling window)")
@@ -794,6 +914,10 @@ class App(tk.Tk):
             return
 
         self._log("clicked: Start Loop")
+        self._log(
+            f"loop params provider={self.var_provider.get()} window_minutes={window_minutes} signal_window={signal_window} "
+            f"interval={interval} auto_scan={auto_scan} log_signals={log_signals} symbols={len(symbols)}"
+        )
 
         def task() -> None:
             try:
@@ -891,15 +1015,21 @@ class KlineWindow(tk.Toplevel):
             self.parent._notify_error("Kline", str(e))
             return
 
-        start, end = self._window_for_chart(freq, bars_n)
+        fixed = self.parent._snapshot_window()
+        if fixed is not None:
+            start, end = fixed
+            use_full = True
+        else:
+            start, end = self._window_for_chart(freq, bars_n)
+            use_full = False
         bars = self.data_service.get_bars(self.symbol, freq, start, end)
         if not bars:
             self.canvas.delete("all")
             self.canvas.create_text(20, 20, anchor="nw", text="No bars in range", fill="black")
             return
 
-        # keep last N
-        bars = bars[-bars_n:]
+        if not use_full:
+            bars = bars[-bars_n:]
         self._draw_candles(bars, title=f"{self.symbol} {freq} {bars[0].ts:%Y-%m-%d %H:%M} .. {bars[-1].ts:%H:%M}")
 
     def _draw_candles(self, bars: list, *, title: str) -> None:
@@ -956,6 +1086,410 @@ class KlineWindow(tk.Toplevel):
             # time labels every ~10 candles
             if i == 0 or i == n - 1 or (n > 20 and i % max(1, n // 10) == 0):
                 self.canvas.create_text(cx, pad_top + plot_h + 12, anchor="n", text=b.ts.strftime("%H:%M"), fill="#444")
+
+
+class BacktestWindow(tk.Toplevel):
+    def __init__(self, parent: App) -> None:
+        super().__init__(parent)
+        self.title("Backtest")
+        self.geometry("980x640")
+        self.transient(parent)
+
+        self.parent = parent
+        self._trades_limit = 200
+
+        self.var_symbol = tk.StringVar(value="")
+        self.var_entry_mode = tk.StringVar(value="entry_mid")
+        self.var_fill_bars = tk.StringVar(value="1")
+        self.var_hold_bars = tk.StringVar(value="12")
+        self.var_tp_level = tk.StringVar(value="1")
+        self.var_exit_priority = tk.StringVar(value="stop_first")
+        self.var_fee_bps = tk.StringVar(value="0")
+        self.var_slippage_bps = tk.StringVar(value="0")
+
+        self.var_lookback = tk.StringVar(value=parent.var_lookback.get() or "20")
+        self.var_vol_factor = tk.StringVar(value=parent.var_vol_factor.get() or "1.5")
+        self.var_atr_k = tk.StringVar(value="0.3")
+        self.var_pct_buffer = tk.StringVar(value="0.002")
+        self.var_swing_lookback = tk.StringVar(value="20")
+
+        self.var_optimize = tk.BooleanVar(value=False)
+        self.var_metric = tk.StringVar(value="avg_return")
+        self.var_lookback_grid = tk.StringVar(value="10,15,20,25,30")
+        self.var_vol_factor_grid = tk.StringVar(value="1.2,1.4,1.6,1.8,2.0")
+
+        self.var_write_csv = tk.BooleanVar(value=False)
+        self.var_trades_csv = tk.StringVar(value=str(parent.repo_root / "data" / "backtest_trades.csv"))
+
+        top = ttk.Frame(self)
+        top.pack(fill="x", padx=10, pady=8)
+
+        ttk.Label(top, text="Symbol (optional)").grid(row=0, column=0, sticky="w")
+        ttk.Entry(top, textvariable=self.var_symbol, width=14).grid(row=0, column=1, sticky="w", padx=6)
+        ttk.Label(top, text="Empty => watchlist (Group/Limit in main)").grid(row=0, column=2, columnspan=4, sticky="w")
+
+        ttk.Label(top, text="EntryMode").grid(row=0, column=6, sticky="w")
+        ttk.Combobox(
+            top,
+            textvariable=self.var_entry_mode,
+            values=["entry_mid", "entry_low", "entry_high", "trigger"],
+            width=10,
+            state="readonly",
+        ).grid(row=0, column=7, sticky="w", padx=6)
+
+        ttk.Label(top, text="Lookback").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(top, textvariable=self.var_lookback, width=8).grid(row=1, column=1, sticky="w", padx=6, pady=(6, 0))
+        ttk.Label(top, text="VolFactor").grid(row=1, column=2, sticky="w", pady=(6, 0))
+        ttk.Entry(top, textvariable=self.var_vol_factor, width=8).grid(row=1, column=3, sticky="w", padx=6, pady=(6, 0))
+        ttk.Label(top, text="ATR k").grid(row=1, column=4, sticky="w", pady=(6, 0))
+        ttk.Entry(top, textvariable=self.var_atr_k, width=8).grid(row=1, column=5, sticky="w", padx=6, pady=(6, 0))
+        ttk.Label(top, text="PctBuffer").grid(row=1, column=6, sticky="w", pady=(6, 0))
+        ttk.Entry(top, textvariable=self.var_pct_buffer, width=8).grid(row=1, column=7, sticky="w", padx=6, pady=(6, 0))
+
+        ttk.Label(top, text="SwingLB").grid(row=1, column=8, sticky="w", pady=(6, 0))
+        ttk.Entry(top, textvariable=self.var_swing_lookback, width=8).grid(row=1, column=9, sticky="w", padx=6, pady=(6, 0))
+
+        ttk.Label(top, text="FillBars").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(top, textvariable=self.var_fill_bars, width=8).grid(row=2, column=1, sticky="w", padx=6, pady=(6, 0))
+        ttk.Label(top, text="HoldBars").grid(row=2, column=2, sticky="w", pady=(6, 0))
+        ttk.Entry(top, textvariable=self.var_hold_bars, width=8).grid(row=2, column=3, sticky="w", padx=6, pady=(6, 0))
+        ttk.Label(top, text="TP").grid(row=2, column=4, sticky="w", pady=(6, 0))
+        ttk.Combobox(top, textvariable=self.var_tp_level, values=["1", "2"], width=5, state="readonly").grid(
+            row=2, column=5, sticky="w", padx=6, pady=(6, 0)
+        )
+        ttk.Label(top, text="Exit").grid(row=2, column=6, sticky="w", pady=(6, 0))
+        ttk.Combobox(top, textvariable=self.var_exit_priority, values=["stop_first", "tp_first"], width=10, state="readonly").grid(
+            row=2, column=7, sticky="w", padx=6, pady=(6, 0)
+        )
+
+        ttk.Label(top, text="Fee bps").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(top, textvariable=self.var_fee_bps, width=8).grid(row=3, column=1, sticky="w", padx=6, pady=(6, 0))
+        ttk.Label(top, text="Slippage bps").grid(row=3, column=2, sticky="w", pady=(6, 0))
+        ttk.Entry(top, textvariable=self.var_slippage_bps, width=8).grid(row=3, column=3, sticky="w", padx=6, pady=(6, 0))
+
+        ttk.Checkbutton(top, text="Optimize", variable=self.var_optimize, command=self._toggle_opt).grid(
+            row=3, column=4, sticky="w", pady=(6, 0)
+        )
+        ttk.Label(top, text="Metric").grid(row=3, column=5, sticky="w", pady=(6, 0))
+        self.metric_combo = ttk.Combobox(
+            top,
+            textvariable=self.var_metric,
+            values=["avg_return", "win_rate", "profit_factor", "avg_r"],
+            width=12,
+            state="readonly",
+        )
+        self.metric_combo.grid(row=3, column=6, sticky="w", padx=6, pady=(6, 0))
+
+        ttk.Label(top, text="Lookback grid").grid(row=4, column=0, sticky="w", pady=(6, 0))
+        self.lookback_grid_entry = ttk.Entry(top, textvariable=self.var_lookback_grid, width=22)
+        self.lookback_grid_entry.grid(row=4, column=1, columnspan=2, sticky="w", padx=6, pady=(6, 0))
+        ttk.Label(top, text="VolFactor grid").grid(row=4, column=3, sticky="w", pady=(6, 0))
+        self.vol_grid_entry = ttk.Entry(top, textvariable=self.var_vol_factor_grid, width=22)
+        self.vol_grid_entry.grid(row=4, column=4, columnspan=2, sticky="w", padx=6, pady=(6, 0))
+
+        ttk.Checkbutton(top, text="Write CSV", variable=self.var_write_csv).grid(row=5, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(top, textvariable=self.var_trades_csv, width=40).grid(row=5, column=1, columnspan=4, sticky="w", padx=6, pady=(6, 0))
+
+        ttk.Label(top, text="Uses Start/End in main (enable Use Start/End)").grid(
+            row=5, column=5, columnspan=3, sticky="w", pady=(6, 0)
+        )
+
+        btns = ttk.Frame(top)
+        btns.grid(row=0, column=9, rowspan=3, padx=(12, 0), sticky="ns")
+        ttk.Button(btns, text="Run Backtest", command=self._on_run).pack(fill="x", pady=2)
+        ttk.Button(btns, text="Clear", command=self._clear_results).pack(fill="x", pady=2)
+
+        mid = ttk.PanedWindow(self, orient="horizontal")
+        mid.pack(fill="both", expand=True, padx=10, pady=(6, 10))
+
+        left = ttk.Frame(mid)
+        right = ttk.Frame(mid)
+        mid.add(left, weight=2)
+        mid.add(right, weight=3)
+
+        ttk.Label(left, text="Summary").pack(anchor="w")
+        self.summary_text = tk.Text(left, height=18)
+        self.summary_text.pack(fill="both", expand=True)
+
+        ttk.Label(right, text=f"Trades preview (first {self._trades_limit})").pack(anchor="w")
+        self.trades_tree = ttk.Treeview(
+            right,
+            columns=("symbol", "entry_time", "exit_time", "return", "outcome"),
+            show="headings",
+            height=16,
+        )
+        for col, w in [
+            ("symbol", 80),
+            ("entry_time", 160),
+            ("exit_time", 160),
+            ("return", 90),
+            ("outcome", 80),
+        ]:
+            self.trades_tree.heading(col, text=col)
+            self.trades_tree.column(col, width=w, anchor="w")
+        self.trades_tree.pack(fill="both", expand=True)
+
+        self._toggle_opt()
+
+    def _toggle_opt(self) -> None:
+        enabled = bool(self.var_optimize.get())
+        state = "normal" if enabled else "disabled"
+        self.lookback_grid_entry.configure(state=state)
+        self.vol_grid_entry.configure(state=state)
+        self.metric_combo.configure(state="readonly" if enabled else "disabled")
+
+    def _parse_int(self, raw: str, default: int) -> int:
+        raw = (raw or "").strip()
+        if raw == "":
+            return default
+        return int(raw)
+
+    def _parse_float(self, raw: str, default: float) -> float:
+        raw = (raw or "").strip()
+        if raw == "":
+            return default
+        return float(raw)
+
+    def _parse_grid_int(self, value: str) -> list[int]:
+        value = value.strip()
+        if ":" in value:
+            parts = value.split(":")
+            if len(parts) == 3:
+                start, stop, step = (int(p) for p in parts)
+                if step <= 0:
+                    raise ValueError("grid step must be > 0")
+                return list(range(start, stop + 1, step))
+        return [int(v.strip()) for v in value.split(",") if v.strip()]
+
+    def _parse_grid_float(self, value: str) -> list[float]:
+        value = value.strip()
+        if ":" in value:
+            parts = value.split(":")
+            if len(parts) == 3:
+                start, stop, step = (float(p) for p in parts)
+                if step <= 0:
+                    raise ValueError("grid step must be > 0")
+                out: list[float] = []
+                cur = start
+                while cur <= stop + 1e-9:
+                    out.append(round(cur, 6))
+                    cur += step
+                return out
+        return [float(v.strip()) for v in value.split(",") if v.strip()]
+
+    def _format_summary(self, label: str, summary) -> str:
+        pf = summary.profit_factor
+        pf_s = "inf" if pf == float("inf") else f"{pf:.3f}" if pf is not None else "na"
+        avg_r = f"{summary.avg_r:.3f}" if summary.avg_r is not None else "na"
+        avg_win = f"{summary.avg_win:.4f}" if summary.avg_win is not None else "na"
+        avg_loss = f"{summary.avg_loss:.4f}" if summary.avg_loss is not None else "na"
+        expectancy = f"{summary.expectancy:.4f}" if summary.expectancy is not None else "na"
+        return (
+            f"{label} trades={len(summary.trades)} wins={summary.wins} "
+            f"win_rate={summary.win_rate:.2%} avg_return={summary.avg_return:.4f} "
+            f"avg_r={avg_r} avg_win={avg_win} avg_loss={avg_loss} expectancy={expectancy} "
+            f"profit_factor={pf_s} max_dd={summary.max_drawdown:.4f} "
+            f"signals={summary.signals} skipped={summary.skipped}"
+        )
+
+    def _clear_results(self) -> None:
+        self.summary_text.delete("1.0", "end")
+        self.trades_tree.delete(*self.trades_tree.get_children())
+
+    def _set_results(self, summary_lines: list[str], trades: list) -> None:
+        self.summary_text.delete("1.0", "end")
+        self.summary_text.insert("end", "\n".join(summary_lines) + "\n")
+        self.trades_tree.delete(*self.trades_tree.get_children())
+        for t in trades[: self._trades_limit]:
+            self.trades_tree.insert(
+                "",
+                "end",
+                values=(
+                    t.symbol,
+                    t.entry_time.astimezone(TZ_SHANGHAI).strftime("%Y-%m-%d %H:%M"),
+                    t.exit_time.astimezone(TZ_SHANGHAI).strftime("%Y-%m-%d %H:%M"),
+                    f"{t.return_pct:.4f}",
+                    t.outcome,
+                ),
+            )
+
+    def _on_run(self) -> None:
+        try:
+            self.parent._ensure_provider()
+            fixed = self.parent._snapshot_window()
+            if fixed is None:
+                window_minutes = self.parent._snapshot_int(self.parent.var_window, 60)
+                start, end = self.parent._window_now(window_minutes)
+            else:
+                start, end = fixed
+
+            symbol = self.var_symbol.get().strip().upper()
+            if symbol:
+                symbols = [symbol]
+            else:
+                symbols = [s for s, _g, _e, _n in self.parent._snapshot_symbols()]
+            if not symbols:
+                raise RuntimeError("no symbols to backtest")
+
+            params = BreakoutParams(
+                lookback=self._parse_int(self.var_lookback.get(), 20),
+                vol_factor=self._parse_float(self.var_vol_factor.get(), 1.5),
+                atr_buffer_k=self._parse_float(self.var_atr_k.get(), 0.3),
+                pct_buffer=self._parse_float(self.var_pct_buffer.get(), 0.002),
+                swing_lookback=self._parse_int(self.var_swing_lookback.get(), 20),
+            )
+
+            fill_bars = self._parse_int(self.var_fill_bars.get(), 1)
+            hold_bars = self._parse_int(self.var_hold_bars.get(), 12)
+            tp_level = self._parse_int(self.var_tp_level.get(), 1)
+            exit_priority = self.var_exit_priority.get().strip() or "stop_first"
+            entry_mode = self.var_entry_mode.get().strip() or "entry_mid"
+            fee_bps = self._parse_float(self.var_fee_bps.get(), 0.0)
+            slippage_bps = self._parse_float(self.var_slippage_bps.get(), 0.0)
+
+            optimize = bool(self.var_optimize.get())
+            metric = self.var_metric.get().strip() or "avg_return"
+            lookback_grid = self._parse_grid_int(self.var_lookback_grid.get()) if optimize else []
+            vol_grid = self._parse_grid_float(self.var_vol_factor_grid.get()) if optimize else []
+            if optimize and (not lookback_grid or not vol_grid):
+                raise RuntimeError("grid values are required for optimization")
+
+            write_csv = bool(self.var_write_csv.get())
+            trades_csv = Path(self.var_trades_csv.get().strip()) if write_csv else None
+            self.parent._log(
+                f"backtest params start={start.isoformat()} end={end.isoformat()} "
+                f"symbols={len(symbols)} entry_mode={entry_mode} fill_bars={fill_bars} "
+                f"hold_bars={hold_bars} tp_level={tp_level} exit_priority={exit_priority} "
+                f"fee_bps={fee_bps} slippage_bps={slippage_bps} optimize={optimize} "
+                f"metric={metric} write_csv={write_csv}"
+            )
+
+        except Exception as e:
+            self.parent._notify_error("Backtest", str(e))
+            return
+
+        self._clear_results()
+        self.parent._log("clicked: Backtest")
+
+        def task() -> None:
+            try:
+                bars_by_symbol: dict[str, list] = {}
+                for sym in symbols:
+                    bars = self.parent.data_service.get_bars(sym, "5m", start, end)
+                    if not bars:
+                        self.parent._log(f"backtest skip {sym}: no bars")
+                        continue
+                    bars_by_symbol[sym] = bars
+
+                if not bars_by_symbol:
+                    raise RuntimeError("no bars loaded")
+
+                summary_lines: list[str] = []
+                trades: list = []
+
+                if optimize:
+                    result = optimize_breakout_5m(
+                        bars_by_symbol=bars_by_symbol,
+                        lookbacks=lookback_grid,
+                        vol_factors=vol_grid,
+                        metric=metric,
+                        base_params=params,
+                        fill_bars=fill_bars,
+                        hold_bars=hold_bars,
+                        tp_level=tp_level,
+                        exit_priority=exit_priority,
+                        entry_mode=entry_mode,
+                        fee_bps=fee_bps,
+                        slippage_bps=slippage_bps,
+                    )
+                    summary_lines.append(f"best metric={result.metric} value={result.best_value:.4f} params={result.best_params}")
+                    summary_lines.append(self._format_summary("summary ALL", result.summary))
+                    trades = result.summary.trades
+                else:
+                    all_trades = []
+                    total_signals = 0
+                    total_skipped = 0
+                    for sym, bars in bars_by_symbol.items():
+                        summary = backtest_breakout_5m(
+                            symbol=sym,
+                            bars_5m=bars,
+                            params=params,
+                            fill_bars=fill_bars,
+                            hold_bars=hold_bars,
+                            tp_level=tp_level,
+                            exit_priority=exit_priority,
+                            entry_mode=entry_mode,
+                            fee_bps=fee_bps,
+                            slippage_bps=slippage_bps,
+                        )
+                        summary_lines.append(self._format_summary(f"summary {sym}", summary))
+                        all_trades.extend(summary.trades)
+                        total_signals += summary.signals
+                        total_skipped += summary.skipped
+
+                    summary_all = summarize_trades(
+                        scope="ALL",
+                        trades=all_trades,
+                        signals=total_signals,
+                        skipped=total_skipped,
+                    )
+                    summary_lines.append(self._format_summary("summary ALL", summary_all))
+                    trades = all_trades
+
+                if trades_csv is not None:
+                    import csv
+
+                    trades_csv.parent.mkdir(parents=True, exist_ok=True)
+                    with trades_csv.open("w", newline="", encoding="utf-8") as f:
+                        w = csv.writer(f)
+                        w.writerow(
+                            [
+                                "symbol",
+                                "signal_time",
+                                "entry_time",
+                                "exit_time",
+                                "entry_price",
+                                "exit_price",
+                                "return_pct",
+                                "r_multiple",
+                                "outcome",
+                                "entry_mode",
+                                "fee_bps",
+                                "slippage_bps",
+                                "fill_bars",
+                                "hold_bars",
+                                "tp_level",
+                            ]
+                        )
+                        for t in trades:
+                            w.writerow(
+                                [
+                                    t.symbol,
+                                    t.signal_time.isoformat(),
+                                    t.entry_time.isoformat(),
+                                    t.exit_time.isoformat(),
+                                    f"{t.entry_price:.6f}",
+                                    f"{t.exit_price:.6f}",
+                                    f"{t.return_pct:.6f}",
+                                    "" if t.r_multiple is None else f"{t.r_multiple:.6f}",
+                                    t.outcome,
+                                    t.entry_mode,
+                                    f"{t.fee_bps:.4f}",
+                                    f"{t.slippage_bps:.4f}",
+                                    t.fill_bars,
+                                    t.hold_bars,
+                                    t.tp_level,
+                                ]
+                            )
+                    self.parent._log(f"backtest trades_csv={trades_csv}")
+
+                self.after(0, lambda: self._set_results(summary_lines, trades))
+            except Exception as e:
+                self.parent._log(f"ERROR backtest: {e}")
+                self.parent._log(traceback.format_exc())
+                self.after(0, lambda: self.parent._notify_error("Backtest", str(e)))
+
+        self.parent._run_in_worker(task)
 
 
 if __name__ == "__main__":

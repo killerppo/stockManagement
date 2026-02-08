@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from stock_management.data.calendar import TZ_SHANGHAI, is_session_minute  # noqa: E402
-from stock_management.data.providers import EastmoneyKlineProvider, TushareProProvider  # noqa: E402
+from stock_management.data.providers import AkshareKlineProvider, EastmoneyKlineProvider, TushareProProvider  # noqa: E402
 from stock_management.data.service import DataService  # noqa: E402
 from stock_management.signals import breakout_entry_5m, breakout_scan_5m  # noqa: E402
 from stock_management.indicators import IndicatorParams  # noqa: E402
@@ -35,6 +35,8 @@ def _now_minute() -> datetime:
 def _build_provider(name: str):
     if name == "eastmoney":
         return EastmoneyKlineProvider()
+    if name == "akshare":
+        return AkshareKlineProvider()
     if name == "tushare":
         return TushareProProvider.from_env()
     raise ValueError(f"unsupported provider: {name}")
@@ -109,7 +111,7 @@ def _run_once(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="App entry: refresh watchlist minute bars into local cache.")
-    parser.add_argument("--provider", choices=["eastmoney", "tushare"], default="eastmoney")
+    parser.add_argument("--provider", choices=["akshare", "eastmoney", "tushare"], default="akshare")
     parser.add_argument("--watchlist", type=Path, default=REPO_ROOT / "config" / "watchlist.csv")
     parser.add_argument("--group", default=None, help="Optional group filter (case-insensitive).")
     parser.add_argument("--limit", type=int, default=0, help="If >0, only refresh first N symbols after filtering.")

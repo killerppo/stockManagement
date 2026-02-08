@@ -12,9 +12,11 @@
 - 自选股：`config/watchlist.csv`
 - 数据缓存目录：`data/`（`data/bars.sqlite`）
 - 信号库：`data/signals.sqlite`
+- 数据源：GUI 可选 `akshare` / `eastmoney`（默认 `akshare`）
 
 ## 输出
 - GUI 列表 + 日志（不做通知推送）
+- 调试日志：记录按钮点击与关键参数快照，便于排查
 
 ## 运行模式
 - CLI（脚本）：单次 / 循环（已实现）
@@ -23,12 +25,19 @@
 ## 刷新窗口策略
 - 刷新（Refresh）：覆盖最近 `window_minutes`（默认 60）或用户指定的 `start/end`
 - 信号扫描（Scan）：使用 `signal_window_minutes`（默认 240）窗口，扫描区间内所有 5m 触发点
+- 数据覆盖说明：Refresh Cache 目前以 1m 缓存为主；若某 provider 的 1m 历史覆盖有限（例如 AkShare 1m 可能仅最近若干交易日），Scan/回测/K线 在需要时会通过 data 模块直接拉取 5m/15m/60m 以覆盖用户指定窗口（以日志提示为准）
 
 ### 固定窗口（Start/End）约定
 - GUI 提供 Start/End 选择能力（Pick 对话框与快捷按钮），输出统一格式：`YYYY-MM-DDTHH:MM:SS+08:00`
 - 当启用固定窗口时：
   - Refresh 使用 `[start, end)` 作为数据窗口
-  - Scan 使用 `end` 作为窗口右边界，并回溯 `signal_window_minutes` 形成 `[end-signal_window, end)` 进行扫描
+  - Scan 使用 `[start, end)` 作为扫描窗口（忽略 `signal_window_minutes`）
+  - K线与回测使用 `[start, end)` 作为展示/回测窗口（忽略 bars 数与回溯窗口）
+- 当未启用固定窗口时：
+  - Refresh 使用 “当前分钟回溯 window_minutes”
+  - Scan 使用 “当前分钟回溯 signal_window_minutes”
+  - K线使用 bars 数回溯窗口
+  - 回测使用 window_minutes 作为默认窗口
 - 当不启用固定窗口时：以“当前分钟”为 `end`，回溯 `window_minutes` 作为 Refresh 窗口
 
 ## GUI（MVP+）
@@ -41,6 +50,7 @@
 - Log：运行日志与错误
 - K线视图：展示选中标的的 K 线（1m/5m/15m/60m），用于快速确认走势
   - 基于缓存数据（`data/bars.sqlite`），不做指标叠加与复杂交互
+- 回测视图：可在 GUI 触发回测与参数优化，展示摘要与（可选）逐笔 CSV
 
 ### 操作按钮（必须）
 - Reload Watchlist
@@ -50,6 +60,7 @@
 - Reload Signals
 - Start Loop / Stop（循环刷新；可选每轮自动 Scan）
 - Show Kline（打开 K 线窗口）
+- Backtest（打开回测窗口）
 - Watchlist Add / Edit / Delete / Save（GUI 内可视化维护）
 
 ### 配置项（必须）
@@ -59,6 +70,8 @@
 - loop interval（秒）
 - Log signals to SQLite（开关）
 - 策略参数（初版：breakout_5m）可在 GUI 调整并影响扫描结果与落库 params
+- 回测参数：entry_mode、fill_bars、hold_bars、tp_level、exit_priority、fee_bps、slippage_bps
+- 回测优化：lookback/grid、vol_factor/grid、metric
 
 ## 不做（后置）
 - K线/指标曲线图（先只做表格与文本明细）
@@ -71,3 +84,4 @@
 - 循环模式可稳定运行；Stop 能中断当前任务与循环
 - K线窗口能展示选中标的的 1m/5m/15m/60m K 线
 - Watchlist 可在 GUI 增删改查并正确写回 `config/watchlist.csv`
+- 回测窗口可执行回测与优化，输出摘要并可导出逐笔 CSV

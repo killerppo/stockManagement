@@ -15,6 +15,13 @@
 - Refresh+Scan 使用 GUI 策略参数（lookback/vol_factor）
 - 最小验证：`python scripts/watchlist_validate.py` 通过
 - 人工验证：K 线显示正常
+- GUI 增强：新增回测窗口（回测/优化、摘要展示、CSV 导出）
+- GUI 调整：启用 Start/End 时，Scan 默认使用全窗口（忽略 signal_window_minutes）
+- GUI 调整：启用 Start/End 时，K线/回测使用全窗口；未启用时使用默认回溯窗口
+- GUI 增强：补充按钮点击与关键参数的调试日志
+- GUI 调整：改为垂直分隔布局，保证 Log 可见
+- GUI 增强：Scan/Refresh 增加 bars 覆盖与不足原因的调试日志
+- GUI 增强：增加 Provider 选择（akshare/eastmoney），默认 akshare
 
 ## Doing
 - （暂无）

@@ -65,22 +65,63 @@ class EastmoneyKlineProvider(DataProvider):
     min_interval_sec: float = 0.2  # naive client-side rate limit
     max_retries: int = 3
     backoff_base_sec: float = 0.5
+    page_limit: int = 2000
 
-    def fetch_1m_bars(self, symbol: str, start: datetime, end: datetime) -> list[Bar]:
-        if start.tzinfo is None or end.tzinfo is None:
-            raise ValueError("start/end must be timezone-aware (Asia/Shanghai)")
-        if end <= start:
-            return []
-
+    def _fetch_page(self, symbol: str, end_dt: datetime) -> list[Bar]:
         secid = _to_secid(symbol)
+        end_dt = end_dt.astimezone(TZ_SHANGHAI)
 
         params = {
             "secid": secid,
             "klt": 1,  # 1m
             "fqt": 0,  # no adjust
             "beg": 0,
-            "end": 20500101,
-            "lmt": 2000,
+            "end": int(end_dt.strftime("%Y%m%d")),
+            "lmt": self.page_limit,
+            "fields1": "f1,f2,f3,f4,f5,f6",
+            "fields2": "f51,f52,f53,f54,f55,f56,f57",
+        }
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) stockManagement/0.0",
+            "Referer": "https://quote.eastmoney.com/",
+        }
+
+        last_err: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            if self.min_interval_sec > 0:
+                time.sleep(self.min_interval_sec)
+            try:
+                r = requests.get(self.api_url, params=params, headers=headers, timeout=self.timeout_sec)
+                r.raise_for_status()
+                payload: dict[str, Any] = r.json()
+                data = payload.get("data")
+                if not data:
+                    raise EastmoneyError(f"missing data for symbol={symbol}")
+
+                klines = data.get("klines") or []
+                return [_parse_kline_row(str(row), source=self.source) for row in klines]
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+                if attempt >= self.max_retries:
+                    raise EastmoneyError(f"eastmoney fetch failed for {symbol}") from e
+                time.sleep(self.backoff_base_sec * (2**attempt))
+        raise EastmoneyError(f"eastmoney fetch failed for {symbol}") from last_err
+
+    def _fetch_by_day(self, symbol: str, day: datetime) -> list[Bar]:
+        secid = _to_secid(symbol)
+        day = day.astimezone(TZ_SHANGHAI)
+        ymd = day.strftime("%Y%m%d")
+        beg_ts = f"{ymd}093000"
+        end_ts = f"{ymd}150000"
+
+        params = {
+            "secid": secid,
+            "klt": 1,  # 1m
+            "fqt": 0,  # no adjust
+            "beg": beg_ts,
+            "end": end_ts,
+            "lmt": self.page_limit,
             "fields1": "f1,f2,f3,f4,f5,f6",
             "fields2": "f51,f52,f53,f54,f55,f56,f57",
         }
@@ -104,15 +145,51 @@ class EastmoneyKlineProvider(DataProvider):
 
                 klines = data.get("klines") or []
                 bars = [_parse_kline_row(str(row), source=self.source) for row in klines]
-                break
+                if bars:
+                    return bars
+                # fallback to date-only if time range is ignored
+                params["beg"] = ymd
+                params["end"] = ymd
+                r = requests.get(self.api_url, params=params, headers=headers, timeout=self.timeout_sec)
+                r.raise_for_status()
+                payload = r.json()
+                data = payload.get("data")
+                klines = (data or {}).get("klines") or []
+                return [_parse_kline_row(str(row), source=self.source) for row in klines]
             except Exception as e:  # noqa: BLE001
                 last_err = e
                 if attempt >= self.max_retries:
                     raise EastmoneyError(f"eastmoney fetch failed for {symbol}") from e
                 time.sleep(self.backoff_base_sec * (2**attempt))
-        else:
-            raise EastmoneyError(f"eastmoney fetch failed for {symbol}") from last_err
+        raise EastmoneyError(f"eastmoney fetch failed for {symbol}") from last_err
 
-        bars = [b for b in bars if start <= b.ts < end]
-        bars.sort(key=lambda b: b.ts)
-        return bars
+    def fetch_1m_bars(self, symbol: str, start: datetime, end: datetime) -> list[Bar]:
+        if start.tzinfo is None or end.tzinfo is None:
+            raise ValueError("start/end must be timezone-aware (Asia/Shanghai)")
+        if end <= start:
+            return []
+
+        total_minutes = int((end - start).total_seconds() / 60)
+
+        if total_minutes <= self.page_limit:
+            bars = self._fetch_page(symbol, end)
+            bars = [b for b in bars if start <= b.ts < end]
+            bars.sort(key=lambda b: b.ts)
+            return bars
+
+        all_bars: list[Bar] = []
+        seen: set[datetime] = set()
+
+        cursor_day = start.astimezone(TZ_SHANGHAI).date()
+        end_day = end.astimezone(TZ_SHANGHAI).date()
+        while cursor_day <= end_day:
+            day_dt = datetime.combine(cursor_day, datetime.min.time(), tzinfo=TZ_SHANGHAI)
+            day_bars = self._fetch_by_day(symbol, day_dt)
+            for b in day_bars:
+                if start <= b.ts < end and b.ts not in seen:
+                    seen.add(b.ts)
+                    all_bars.append(b)
+            cursor_day = cursor_day + timedelta(days=1)
+
+        all_bars.sort(key=lambda b: b.ts)
+        return all_bars
