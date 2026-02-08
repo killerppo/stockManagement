@@ -6,6 +6,7 @@
   - `stock_management/storage/signal_store.py`
   - `scripts/storage_selfcheck.py`
   - `scripts/storage_list_signals.py`
+- 增强 signals 查询：支持分页（`limit/offset`）与计数（`count_signals`），供 GUI 使用
 
 ## Doing
 - （暂无）

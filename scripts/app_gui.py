@@ -102,6 +102,12 @@ class App(tk.Tk):
         self.signal_store = SQLiteSignalStore(self.signals_db)
 
         self._signals_cache: dict[int, object] = {}
+        self.var_sig_page_size = tk.StringVar(value="50")
+        self._sig_offset = 0
+        self._sig_total = 0
+        self._sig_page_var = tk.StringVar(value="")
+        self._sig_prev_btn: ttk.Button | None = None
+        self._sig_next_btn: ttk.Button | None = None
         self._watch_items: list[WatchItem] = []
         self._backtest_window: BacktestWindow | None = None
         self._build_ui()
@@ -229,7 +235,27 @@ class App(tk.Tk):
         self.watch_tree.pack(fill="both", expand=True)
         self.watch_tree.bind("<Double-1>", lambda _e: self._on_show_kline())
 
-        ttk.Label(right, text="Recent Signals").pack(anchor="w")
+        sig_hdr = ttk.Frame(right)
+        sig_hdr.pack(fill="x")
+        ttk.Label(sig_hdr, text="Signals").pack(side="left")
+
+        ttk.Label(sig_hdr, textvariable=self._sig_page_var).pack(side="right", padx=(0, 8))
+        self._sig_next_btn = ttk.Button(sig_hdr, text="Next", command=self._on_signals_next)
+        self._sig_next_btn.pack(side="right", padx=(4, 0))
+        self._sig_prev_btn = ttk.Button(sig_hdr, text="Prev", command=self._on_signals_prev)
+        self._sig_prev_btn.pack(side="right")
+
+        ttk.Label(sig_hdr, text="PerPage").pack(side="right")
+        sig_page_combo = ttk.Combobox(
+            sig_hdr,
+            textvariable=self.var_sig_page_size,
+            values=["25", "50", "100", "200"],
+            width=5,
+            state="readonly",
+        )
+        sig_page_combo.pack(side="right", padx=(4, 10))
+        sig_page_combo.bind("<<ComboboxSelected>>", lambda _e: self._on_signals_page_size())
+
         self.sig_tree = ttk.Treeview(
             right,
             columns=("ts", "symbol", "strategy", "dir", "score", "entry", "stop", "tp1", "tp2"),
@@ -591,12 +617,46 @@ class App(tk.Tk):
             return
         self._backtest_window = BacktestWindow(self)
 
-    def _reload_signals(self) -> None:
-        self._log("clicked: Reload Signals")
+    def _snapshot_sig_page_size(self) -> int:
+        try:
+            n = int((self.var_sig_page_size.get() or "").strip() or "50")
+        except Exception:
+            n = 50
+        return max(1, min(500, n))
+
+    def _on_signals_page_size(self) -> None:
+        self._sig_offset = 0
+        self._log(f"signals page_size -> {self._snapshot_sig_page_size()}")
+        self._reload_signals(reason="Signals PageSize")
+
+    def _on_signals_prev(self) -> None:
+        page_size = self._snapshot_sig_page_size()
+        self._sig_offset = max(0, self._sig_offset - page_size)
+        self._log(f"clicked: Signals Prev offset={self._sig_offset} page_size={page_size}")
+        self._reload_signals(reason="Signals Prev")
+
+    def _on_signals_next(self) -> None:
+        page_size = self._snapshot_sig_page_size()
+        if self._sig_offset + page_size < self._sig_total:
+            self._sig_offset += page_size
+        self._log(f"clicked: Signals Next offset={self._sig_offset} page_size={page_size}")
+        self._reload_signals(reason="Signals Next")
+
+    def _reload_signals(self, *, reason: str = "Reload Signals") -> None:
+        self._log(f"clicked: {reason}")
         self.sig_tree.delete(*self.sig_tree.get_children())
         self._signals_cache.clear()
         try:
-            rows = self.signal_store.list_recent(limit=50)
+            page_size = self._snapshot_sig_page_size()
+            total = self.signal_store.count_signals()
+            self._sig_total = total
+            if total <= 0:
+                self._sig_offset = 0
+            else:
+                last_offset = ((total - 1) // page_size) * page_size
+                if self._sig_offset > last_offset:
+                    self._sig_offset = last_offset
+            rows = self.signal_store.list_recent(limit=page_size, offset=self._sig_offset)
         except Exception as e:
             self._log(f"ERROR load signals: {e}")
             return
@@ -620,6 +680,17 @@ class App(tk.Tk):
                     f"{r.tp2:.3f}",
                 ),
             )
+        page_size = self._snapshot_sig_page_size()
+        if self._sig_total <= 0:
+            self._sig_page_var.set("0/0 total=0")
+        else:
+            page_count = (self._sig_total + page_size - 1) // page_size
+            page_index = (self._sig_offset // page_size) + 1
+            self._sig_page_var.set(f"{page_index}/{page_count} total={self._sig_total}")
+        if self._sig_prev_btn is not None:
+            self._sig_prev_btn["state"] = "disabled" if self._sig_offset <= 0 else "normal"
+        if self._sig_next_btn is not None:
+            self._sig_next_btn["state"] = "disabled" if (self._sig_offset + page_size) >= self._sig_total else "normal"
         self._log(f"signals loaded: {len(rows)}")
 
     def _on_signal_select(self, _evt=None) -> None:

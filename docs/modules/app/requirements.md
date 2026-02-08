@@ -45,7 +45,7 @@
 
 ### 页面/区域
 - Watchlist 表格：symbol/group/enabled/最近时间/最近收盘价/本次变更数
-- Signals 表格：最近信号列表（从 `data/signals.sqlite` 读取）
+- Signals 表格：信号列表（从 `data/signals.sqlite` 读取，支持分页：上一页/下一页 + 每页条数）
 - Signal Details：选中某条信号后展示 reasons / params / risk_flags
 - Log：运行日志与错误
 - K线视图：展示选中标的的 K 线（1m/5m/15m/60m），用于快速确认走势

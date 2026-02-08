@@ -133,9 +133,23 @@ class SQLiteSignalStore:
         finally:
             conn.close()
 
-    def list_recent(self, *, limit: int = 50, symbol: str | None = None) -> list[SignalRow]:
+    def count_signals(self, *, symbol: str | None = None) -> int:
+        self.init()
+        conn = self._connect()
+        try:
+            if symbol:
+                cur = conn.execute("SELECT COUNT(1) FROM signals WHERE symbol=?", (symbol,))
+            else:
+                cur = conn.execute("SELECT COUNT(1) FROM signals")
+            row = cur.fetchone()
+            return 0 if row is None else int(row[0])
+        finally:
+            conn.close()
+
+    def list_recent(self, *, limit: int = 50, offset: int = 0, symbol: str | None = None) -> list[SignalRow]:
         self.init()
         lim = max(1, min(500, int(limit)))
+        off = max(0, int(offset))
         conn = self._connect()
         try:
             if symbol:
@@ -148,8 +162,9 @@ class SQLiteSignalStore:
                     WHERE symbol=?
                     ORDER BY ts DESC, id DESC
                     LIMIT ?
+                    OFFSET ?
                     """,
-                    (symbol, lim),
+                    (symbol, lim, off),
                 )
             else:
                 cur = conn.execute(
@@ -160,8 +175,9 @@ class SQLiteSignalStore:
                     FROM signals
                     ORDER BY ts DESC, id DESC
                     LIMIT ?
+                    OFFSET ?
                     """,
-                    (lim,),
+                    (lim, off),
                 )
             rows = cur.fetchall()
         finally:
@@ -207,4 +223,3 @@ class SQLiteSignalStore:
                 )
             )
         return out
-

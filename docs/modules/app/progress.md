@@ -22,6 +22,7 @@
 - GUI 调整：改为垂直分隔布局，保证 Log 可见
 - GUI 增强：Scan/Refresh 增加 bars 覆盖与不足原因的调试日志
 - GUI 增强：增加 Provider 选择（akshare/eastmoney），默认 akshare
+- GUI 增强：Signals 列表支持分页（上一页/下一页 + 每页条数）
 
 ## Doing
 - （暂无）
