@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from dataclasses import asdict
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -94,8 +95,8 @@ def _run_once(
             signals_to_store,
             strategy_id="breakout_5m_v1",
             params_snapshot={
-                "indicator_params": ind_params.__dict__,
-                "strategy_params": strat_params.__dict__,
+                "indicator_params": asdict(ind_params),
+                "strategy_params": asdict(strat_params),
             },
         )
         print(f"signals_stored={inserted} db={signal_store.path}")

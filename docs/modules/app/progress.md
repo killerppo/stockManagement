@@ -14,6 +14,7 @@
 - GUI 增强：Watchlist 可视化增删改查并写回 CSV
 - Refresh+Scan 使用 GUI 策略参数（lookback/vol_factor）
 - 最小验证：`python scripts/watchlist_validate.py` 通过
+- 人工验证：K 线显示正常
 
 ## Doing
 - （暂无）

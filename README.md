@@ -10,3 +10,5 @@ A股自选股分钟级信号工具（本地脚本）。
 - 创建环境：`conda env create -f environment.yml`
 - 激活环境：`conda activate stockManagement`
 
+## GUI
+- 启动：`python scripts/app_gui.py`

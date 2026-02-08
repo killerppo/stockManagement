@@ -95,3 +95,19 @@ def filter_watchlist(
             continue
         out.append(item)
     return out
+
+
+def save_watchlist(items: list[WatchItem], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["symbol", "group", "enabled", "note"])
+        writer.writeheader()
+        for item in items:
+            writer.writerow(
+                {
+                    "symbol": item.symbol.upper(),
+                    "group": item.group or "",
+                    "enabled": "1" if item.enabled else "0",
+                    "note": item.note or "",
+                }
+            )
