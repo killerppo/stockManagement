@@ -11,6 +11,8 @@
 - app 集成：回测窗口（回测/优化/摘要/CSV）
 - GUI 回测验证：summary 000001.SZ trades=0 / summary 002519.SZ trades=0 / summary ALL trades=0（signals=4 skipped=4）
 - AkShare 长窗口验证：`002519.SZ`（2026-01-05 09:30-2026-02-06 15:00，5m）`signals=39` / `trades=15` / `win_rate≈46.67%`（证明长窗口数据覆盖后回测可产出有效指标）
+- 回测规则增强：A 股 **T+1** 约束（当日买入不可当日卖出）
+- 成本模型增强：固定手续费（买入 5 元、卖出 6 元）并以 `position_cash_cny` 折算收益率
 
 ## Doing
 - （暂无）

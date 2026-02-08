@@ -14,7 +14,10 @@
 - `symbol` 或 watchlist（`config/watchlist.csv` + `group` 过滤）。
 - 时间窗口 `start/end`（ISO 时间，支持 `Asia/Shanghai`）。
 - 回测参数：`fill_bars`、`hold_bars`、`tp_level`、`exit_priority`、`entry_mode`。
-- 成本参数：`fee_bps`、`slippage_bps`（双边计入）。
+- 交易约束：**一律按 A 股 T+1**（当日买入不能当日卖出；详见回测规则）。
+- 成本参数（固定手续费）：买入固定 `5` 元、卖出固定 `6` 元（CNY/笔）。
+  - 为了将固定费用折算为收益率，回测需指定 `position_cash_cny`（每笔入场使用的资金，默认 10000 CNY），并按 A 股 100 股一手取整计算股数。
+- 滑点参数（可选）：`slippage_bps`（双边计入，用于执行价偏移；默认 0）。
 - 策略参数：`BreakoutParams`（`lookback`、`vol_factor`、`atr_buffer_k`、`pct_buffer`、`swing_lookback`）。
 
 ## 输出
@@ -28,11 +31,13 @@
   - `entry_mode=entry_low`：使用入场区间下沿
   - `entry_mode=entry_high`：使用入场区间上沿
   - `entry_mode=trigger`：使用触发价（初版等同 `entry_low`）
-- 出场：逐根 bar 检查触发 `stop_loss` 或 `take_profit(tp_level)`。
+- 出场：**受 T+1 约束**，成交当日不允许出场；从**下一交易日的第一根 bar 起**才开始逐根检查触发 `stop_loss` 或 `take_profit(tp_level)`。
   - 同一根 bar 同时触发时，按 `exit_priority`（`stop_first` / `tp_first`）。
-- 期限：超过 `hold_bars` 未触发则按最后一根 bar 的 `close` 平仓。
+- 期限：从“允许出场的第一根 bar”开始计数，超过 `hold_bars` 未触发则按最后一根 bar 的 `close` 平仓。
 - 交易互不影响（不做持仓冲突与资金管理）。
-- 成本：`fee_bps + slippage_bps` 双边计入（入场加价，出场减价）。
+- 成本：
+  - 固定手续费：买入 -5 元、卖出 -6 元（从 PnL 中扣除）
+  - 滑点：`slippage_bps` 双边计入（入场加价，出场减价）
 
 ## 评估指标（MVP）
 - `trades`、`wins`、`win_rate`

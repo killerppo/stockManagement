@@ -18,6 +18,13 @@ class TradeResult:
     entry_mode: str
     fee_bps: float
     slippage_bps: float
+    fee_buy_cny: float
+    fee_sell_cny: float
+    position_cash_cny: float
+    shares: int
+    entry_notional_cny: float
+    exit_notional_cny: float
+    net_pnl_cny: float
     fill_bars: int
     hold_bars: int
     tp_level: int

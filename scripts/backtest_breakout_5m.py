@@ -80,7 +80,7 @@ def _print_summary(summary, label: str) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Backtest breakout 5m strategy on cached data.")
+    parser = argparse.ArgumentParser(description="Backtest breakout 5m strategy on cached data (A-share T+1 enforced).")
     parser.add_argument("--symbol", help="e.g. 000001.SZ / 600000.SH")
     parser.add_argument("--watchlist", type=Path, default=REPO_ROOT / "config" / "watchlist.csv")
     parser.add_argument("--group", help="watchlist group filter")
@@ -99,7 +99,10 @@ def main() -> int:
         choices=["entry_mid", "entry_low", "entry_high", "trigger"],
         help="entry price mode",
     )
-    parser.add_argument("--fee-bps", type=float, default=0.0, help="fee (bps) per side")
+    parser.add_argument("--position-cash-cny", type=float, default=10000.0, help="position cash per trade (CNY)")
+    parser.add_argument("--fee-buy-cny", type=float, default=5.0, help="fixed buy fee per trade (CNY)")
+    parser.add_argument("--fee-sell-cny", type=float, default=6.0, help="fixed sell fee per trade (CNY)")
+    parser.add_argument("--fee-bps", type=float, default=0.0, help="optional extra fee (bps) per side")
     parser.add_argument("--slippage-bps", type=float, default=0.0, help="slippage (bps) per side")
     parser.add_argument("--trades-csv", type=Path, help="write trade details to CSV")
 
@@ -144,6 +147,9 @@ def main() -> int:
             tp_level=args.tp_level,
             exit_priority=args.exit_priority,
             entry_mode=args.entry_mode,
+            position_cash_cny=args.position_cash_cny,
+            fee_buy_cny=args.fee_buy_cny,
+            fee_sell_cny=args.fee_sell_cny,
             fee_bps=args.fee_bps,
             slippage_bps=args.slippage_bps,
         )
@@ -163,6 +169,9 @@ def main() -> int:
             tp_level=args.tp_level,
             exit_priority=args.exit_priority,
             entry_mode=args.entry_mode,
+            position_cash_cny=args.position_cash_cny,
+            fee_buy_cny=args.fee_buy_cny,
+            fee_sell_cny=args.fee_sell_cny,
             fee_bps=args.fee_bps,
             slippage_bps=args.slippage_bps,
         )
@@ -194,6 +203,13 @@ def main() -> int:
                     "entry_mode",
                     "fee_bps",
                     "slippage_bps",
+                    "fee_buy_cny",
+                    "fee_sell_cny",
+                    "position_cash_cny",
+                    "shares",
+                    "entry_notional_cny",
+                    "exit_notional_cny",
+                    "net_pnl_cny",
                     "fill_bars",
                     "hold_bars",
                     "tp_level",
@@ -214,6 +230,13 @@ def main() -> int:
                         t.entry_mode,
                         f"{t.fee_bps:.4f}",
                         f"{t.slippage_bps:.4f}",
+                        f"{t.fee_buy_cny:.2f}",
+                        f"{t.fee_sell_cny:.2f}",
+                        f"{t.position_cash_cny:.2f}",
+                        t.shares,
+                        f"{t.entry_notional_cny:.2f}",
+                        f"{t.exit_notional_cny:.2f}",
+                        f"{t.net_pnl_cny:.2f}",
                         t.fill_bars,
                         t.hold_bars,
                         t.tp_level,

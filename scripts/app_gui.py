@@ -1310,8 +1310,10 @@ class BacktestWindow(tk.Toplevel):
         self.var_hold_bars = tk.StringVar(value="12")
         self.var_tp_level = tk.StringVar(value="1")
         self.var_exit_priority = tk.StringVar(value="stop_first")
-        self.var_fee_bps = tk.StringVar(value="0")
         self.var_slippage_bps = tk.StringVar(value="0")
+        self.var_position_cash = tk.StringVar(value="10000")
+        self.var_fee_buy_cny = tk.StringVar(value="5")
+        self.var_fee_sell_cny = tk.StringVar(value="6")
 
         self.var_lookback = tk.StringVar(value=parent.var_lookback.get() or "20")
         self.var_vol_factor = tk.StringVar(value=parent.var_vol_factor.get() or "1.5")
@@ -1368,15 +1370,22 @@ class BacktestWindow(tk.Toplevel):
             row=2, column=7, sticky="w", padx=6, pady=(6, 0)
         )
 
-        ttk.Label(top, text="Fee bps").grid(row=3, column=0, sticky="w", pady=(6, 0))
-        ttk.Entry(top, textvariable=self.var_fee_bps, width=8).grid(row=3, column=1, sticky="w", padx=6, pady=(6, 0))
-        ttk.Label(top, text="Slippage bps").grid(row=3, column=2, sticky="w", pady=(6, 0))
-        ttk.Entry(top, textvariable=self.var_slippage_bps, width=8).grid(row=3, column=3, sticky="w", padx=6, pady=(6, 0))
+        ttk.Label(top, text="T+1").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(top, text="Enforced").grid(row=3, column=1, sticky="w", padx=6, pady=(6, 0))
+        ttk.Label(top, text="PosCash(CNY)").grid(row=3, column=2, sticky="w", pady=(6, 0))
+        ttk.Entry(top, textvariable=self.var_position_cash, width=10).grid(row=3, column=3, sticky="w", padx=6, pady=(6, 0))
+        ttk.Label(top, text="BuyFee(CNY)").grid(row=3, column=4, sticky="w", pady=(6, 0))
+        ttk.Entry(top, textvariable=self.var_fee_buy_cny, width=8).grid(row=3, column=5, sticky="w", padx=6, pady=(6, 0))
+        ttk.Label(top, text="SellFee(CNY)").grid(row=3, column=6, sticky="w", pady=(6, 0))
+        ttk.Entry(top, textvariable=self.var_fee_sell_cny, width=8).grid(row=3, column=7, sticky="w", padx=6, pady=(6, 0))
+
+        ttk.Label(top, text="Slippage bps").grid(row=3, column=8, sticky="w", pady=(6, 0))
+        ttk.Entry(top, textvariable=self.var_slippage_bps, width=8).grid(row=3, column=9, sticky="w", padx=6, pady=(6, 0))
 
         ttk.Checkbutton(top, text="Optimize", variable=self.var_optimize, command=self._toggle_opt).grid(
-            row=3, column=4, sticky="w", pady=(6, 0)
+            row=4, column=6, sticky="w", pady=(6, 0)
         )
-        ttk.Label(top, text="Metric").grid(row=3, column=5, sticky="w", pady=(6, 0))
+        ttk.Label(top, text="Metric").grid(row=4, column=7, sticky="w", pady=(6, 0))
         self.metric_combo = ttk.Combobox(
             top,
             textvariable=self.var_metric,
@@ -1384,24 +1393,24 @@ class BacktestWindow(tk.Toplevel):
             width=12,
             state="readonly",
         )
-        self.metric_combo.grid(row=3, column=6, sticky="w", padx=6, pady=(6, 0))
+        self.metric_combo.grid(row=4, column=8, sticky="w", padx=6, pady=(6, 0))
 
-        ttk.Label(top, text="Lookback grid").grid(row=4, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(top, text="Lookback grid").grid(row=5, column=0, sticky="w", pady=(6, 0))
         self.lookback_grid_entry = ttk.Entry(top, textvariable=self.var_lookback_grid, width=22)
-        self.lookback_grid_entry.grid(row=4, column=1, columnspan=2, sticky="w", padx=6, pady=(6, 0))
-        ttk.Label(top, text="VolFactor grid").grid(row=4, column=3, sticky="w", pady=(6, 0))
+        self.lookback_grid_entry.grid(row=5, column=1, columnspan=2, sticky="w", padx=6, pady=(6, 0))
+        ttk.Label(top, text="VolFactor grid").grid(row=5, column=3, sticky="w", pady=(6, 0))
         self.vol_grid_entry = ttk.Entry(top, textvariable=self.var_vol_factor_grid, width=22)
-        self.vol_grid_entry.grid(row=4, column=4, columnspan=2, sticky="w", padx=6, pady=(6, 0))
+        self.vol_grid_entry.grid(row=5, column=4, columnspan=2, sticky="w", padx=6, pady=(6, 0))
 
-        ttk.Checkbutton(top, text="Write CSV", variable=self.var_write_csv).grid(row=5, column=0, sticky="w", pady=(6, 0))
-        ttk.Entry(top, textvariable=self.var_trades_csv, width=40).grid(row=5, column=1, columnspan=4, sticky="w", padx=6, pady=(6, 0))
+        ttk.Checkbutton(top, text="Write CSV", variable=self.var_write_csv).grid(row=6, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(top, textvariable=self.var_trades_csv, width=40).grid(row=6, column=1, columnspan=4, sticky="w", padx=6, pady=(6, 0))
 
         ttk.Label(top, text="Uses Start/End in main (enable Use Start/End)").grid(
-            row=5, column=5, columnspan=3, sticky="w", pady=(6, 0)
+            row=6, column=5, columnspan=4, sticky="w", pady=(6, 0)
         )
 
         btns = ttk.Frame(top)
-        btns.grid(row=0, column=9, rowspan=3, padx=(12, 0), sticky="ns")
+        btns.grid(row=0, column=10, rowspan=6, padx=(12, 0), sticky="ns")
         ttk.Button(btns, text="Run Backtest", command=self._on_run).pack(fill="x", pady=2)
         ttk.Button(btns, text="Clear", command=self._clear_results).pack(fill="x", pady=2)
 
@@ -1550,8 +1559,10 @@ class BacktestWindow(tk.Toplevel):
             tp_level = self._parse_int(self.var_tp_level.get(), 1)
             exit_priority = self.var_exit_priority.get().strip() or "stop_first"
             entry_mode = self.var_entry_mode.get().strip() or "entry_mid"
-            fee_bps = self._parse_float(self.var_fee_bps.get(), 0.0)
             slippage_bps = self._parse_float(self.var_slippage_bps.get(), 0.0)
+            position_cash_cny = self._parse_float(self.var_position_cash.get(), 10000.0)
+            fee_buy_cny = self._parse_float(self.var_fee_buy_cny.get(), 5.0)
+            fee_sell_cny = self._parse_float(self.var_fee_sell_cny.get(), 6.0)
 
             optimize = bool(self.var_optimize.get())
             metric = self.var_metric.get().strip() or "avg_return"
@@ -1566,7 +1577,8 @@ class BacktestWindow(tk.Toplevel):
                 f"backtest params start={start.isoformat()} end={end.isoformat()} "
                 f"symbols={len(symbols)} entry_mode={entry_mode} fill_bars={fill_bars} "
                 f"hold_bars={hold_bars} tp_level={tp_level} exit_priority={exit_priority} "
-                f"fee_bps={fee_bps} slippage_bps={slippage_bps} optimize={optimize} "
+                f"t_plus_one=True position_cash_cny={position_cash_cny} fee_buy_cny={fee_buy_cny} fee_sell_cny={fee_sell_cny} "
+                f"slippage_bps={slippage_bps} optimize={optimize} "
                 f"metric={metric} write_csv={write_csv}"
             )
 
@@ -1605,8 +1617,10 @@ class BacktestWindow(tk.Toplevel):
                         tp_level=tp_level,
                         exit_priority=exit_priority,
                         entry_mode=entry_mode,
-                        fee_bps=fee_bps,
                         slippage_bps=slippage_bps,
+                        fee_buy_cny=fee_buy_cny,
+                        fee_sell_cny=fee_sell_cny,
+                        position_cash_cny=position_cash_cny,
                     )
                     summary_lines.append(f"best metric={result.metric} value={result.best_value:.4f} params={result.best_params}")
                     summary_lines.append(self._format_summary("summary ALL", result.summary))
@@ -1625,8 +1639,10 @@ class BacktestWindow(tk.Toplevel):
                             tp_level=tp_level,
                             exit_priority=exit_priority,
                             entry_mode=entry_mode,
-                            fee_bps=fee_bps,
                             slippage_bps=slippage_bps,
+                            fee_buy_cny=fee_buy_cny,
+                            fee_sell_cny=fee_sell_cny,
+                            position_cash_cny=position_cash_cny,
                         )
                         summary_lines.append(self._format_summary(f"summary {sym}", summary))
                         all_trades.extend(summary.trades)
@@ -1660,8 +1676,14 @@ class BacktestWindow(tk.Toplevel):
                                 "r_multiple",
                                 "outcome",
                                 "entry_mode",
-                                "fee_bps",
                                 "slippage_bps",
+                                "fee_buy_cny",
+                                "fee_sell_cny",
+                                "position_cash_cny",
+                                "shares",
+                                "entry_notional_cny",
+                                "exit_notional_cny",
+                                "net_pnl_cny",
                                 "fill_bars",
                                 "hold_bars",
                                 "tp_level",
@@ -1680,8 +1702,14 @@ class BacktestWindow(tk.Toplevel):
                                     "" if t.r_multiple is None else f"{t.r_multiple:.6f}",
                                     t.outcome,
                                     t.entry_mode,
-                                    f"{t.fee_bps:.4f}",
                                     f"{t.slippage_bps:.4f}",
+                                    f"{t.fee_buy_cny:.2f}",
+                                    f"{t.fee_sell_cny:.2f}",
+                                    f"{t.position_cash_cny:.2f}",
+                                    t.shares,
+                                    f"{t.entry_notional_cny:.2f}",
+                                    f"{t.exit_notional_cny:.2f}",
+                                    f"{t.net_pnl_cny:.2f}",
                                     t.fill_bars,
                                     t.hold_bars,
                                     t.tp_level,

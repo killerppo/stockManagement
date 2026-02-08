@@ -11,6 +11,17 @@ from stock_management.signals import BreakoutParams, breakout_scan_5m
 from .models import BacktestSummary, OptimizationResult, TradeResult
 
 
+def _calc_shares_from_cash(*, position_cash_cny: float, entry_price: float) -> int:
+    cash = float(position_cash_cny)
+    if cash <= 0:
+        return 0
+    price = float(entry_price)
+    if price <= 0:
+        return 0
+    lots = int(cash // (price * 100.0))
+    return max(0, lots * 100)
+
+
 def _max_drawdown(returns: list[float]) -> float:
     equity = 0.0
     peak = 0.0
@@ -114,6 +125,9 @@ def _simulate_trade(
     exit_priority: str,
     fee_bps: float,
     slippage_bps: float,
+    fee_buy_cny: float,
+    fee_sell_cny: float,
+    position_cash_cny: float,
     tp_level: int,
 ) -> TradeResult | None:
     fill_bars = max(1, fill_bars)
@@ -145,11 +159,25 @@ def _simulate_trade(
     entry_bar = bars_5m[entry_index]
     entry_price = entry_target
 
+    shares = _calc_shares_from_cash(position_cash_cny=position_cash_cny, entry_price=entry_price)
+    if shares <= 0:
+        return None
+
+    # A-share T+1: cannot sell on the entry day.
+    entry_date = entry_bar.ts.date()
+    exit_start_i = None
+    for i in range(entry_index + 1, len(bars_5m)):
+        if bars_5m[i].ts.date() > entry_date:
+            exit_start_i = i
+            break
+    if exit_start_i is None:
+        return None
+
     exit_index = None
     exit_price = None
     outcome = "timeout"
-    last_i = min(len(bars_5m) - 1, entry_index + hold_bars - 1)
-    for i in range(entry_index, last_i + 1):
+    last_i = min(len(bars_5m) - 1, exit_start_i + hold_bars - 1)
+    for i in range(exit_start_i, last_i + 1):
         b = bars_5m[i]
         hit_stop = b.low <= stop_loss
         hit_tp = b.high >= take_profit
@@ -183,7 +211,11 @@ def _simulate_trade(
         exit_price = exit_price * (1 - cost_bps / 10000.0)
 
     exit_bar = bars_5m[exit_index]
-    return_pct = (exit_price - entry_price) / entry_price
+    entry_notional = float(entry_price) * float(shares)
+    exit_notional = float(exit_price) * float(shares)
+    total_fees = float(fee_buy_cny) + float(fee_sell_cny)
+    net_pnl = (exit_notional - entry_notional) - total_fees
+    return_pct = net_pnl / entry_notional if entry_notional > 0 else 0.0
     if cost_bps > 0:
         stop_exec = stop_loss * (1 - cost_bps / 10000.0)
     else:
@@ -204,6 +236,13 @@ def _simulate_trade(
         entry_mode=entry_mode,
         fee_bps=float(fee_bps),
         slippage_bps=float(slippage_bps),
+        fee_buy_cny=float(fee_buy_cny),
+        fee_sell_cny=float(fee_sell_cny),
+        position_cash_cny=float(position_cash_cny),
+        shares=int(shares),
+        entry_notional_cny=float(entry_notional),
+        exit_notional_cny=float(exit_notional),
+        net_pnl_cny=float(net_pnl),
         fill_bars=int(fill_bars),
         hold_bars=int(hold_bars),
         tp_level=int(tp_level),
@@ -223,6 +262,9 @@ def backtest_breakout_5m(
     entry_mode: str = "entry_mid",
     fee_bps: float = 0.0,
     slippage_bps: float = 0.0,
+    fee_buy_cny: float = 5.0,
+    fee_sell_cny: float = 6.0,
+    position_cash_cny: float = 10000.0,
 ) -> BacktestSummary:
     if params is None:
         params = BreakoutParams()
@@ -259,6 +301,9 @@ def backtest_breakout_5m(
             exit_priority=exit_priority,
             fee_bps=fee_bps,
             slippage_bps=slippage_bps,
+            fee_buy_cny=fee_buy_cny,
+            fee_sell_cny=fee_sell_cny,
+            position_cash_cny=position_cash_cny,
             tp_level=tp_level,
         )
         if trade is None:
@@ -284,6 +329,9 @@ def optimize_breakout_5m(
     entry_mode: str = "entry_mid",
     fee_bps: float = 0.0,
     slippage_bps: float = 0.0,
+    fee_buy_cny: float = 5.0,
+    fee_sell_cny: float = 6.0,
+    position_cash_cny: float = 10000.0,
 ) -> OptimizationResult:
     if ind_params is None:
         ind_params = IndicatorParams()
@@ -313,6 +361,9 @@ def optimize_breakout_5m(
                     entry_mode=entry_mode,
                     fee_bps=fee_bps,
                     slippage_bps=slippage_bps,
+                    fee_buy_cny=fee_buy_cny,
+                    fee_sell_cny=fee_sell_cny,
+                    position_cash_cny=position_cash_cny,
                 )
                 all_trades.extend(summary.trades)
                 total_signals += summary.signals
